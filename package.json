@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "worker": "node worker/src/cli.ts",
-    "test": "node --test worker/test/"
+    "test": "node --test worker/test/",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
@@ -13,5 +14,13 @@
     "postgres": "^3.4.5",
     "web-push": "^3.6.7"
   },
-  "engines": { "node": ">=22.18" }
+  "engines": {
+    "node": ">=22.18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/web-push": "^3.6.4",
+    "@types/nodemailer": "^6.4.17",
+    "typescript": "^5.9.3"
+  }
 }

@@ -65,6 +65,8 @@ export interface SourceAdapter {
   countries: string[];
   /** Mindestabstand zwischen zwei Anfragen an diese Quelle */
   minDelayMs?: number;
+  /** Quelle blockt Rechenzentren → läuft nur auf dem Heim-Rechner (Raspberry Pi) */
+  needsHome?: boolean;
   search?(q: ProductQuery): Promise<Candidate[]>;
   fetch(listing: ListingRef, q: ProductQuery): Promise<OfferData[]>;
 }

@@ -1,6 +1,6 @@
 // Neue Produkte: bei allen Quellen suchen und passende Treffer als Abfrageziele speichern
 import { db } from '../db.ts';
-import { SOURCES } from '../adapters/registry.ts';
+import { SOURCES, availableHere } from '../adapters/registry.ts';
 import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
 import type { Candidate } from '../adapters/types.ts';
@@ -16,7 +16,9 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
       and (${onlyProductId ?? null}::uuid is null or id = ${onlyProductId ?? null}::uuid)
       and (discovery_status = 'pending'
            or (discovery_status in ('done','failed') and discovery_at < now() - interval '7 days')
-           or ${onlyProductId ?? null}::uuid is not null)
+           or ${onlyProductId ?? null}::uuid is not null
+           or (${process.env.KB_RUNNER === 'home'} and not exists (select 1 from kb_listings l where l.product_id = kb_products.id and l.source in ('amazon','geizhals'))
+               and discovery_at < now() - interval '6 hours'))
     order by discovery_at nulls first
     limit 10`;
   let listingsAdded = 0;
@@ -24,7 +26,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
     if (Date.now() > deadline) break;
     await sql`update kb_products set discovery_status = 'running', discovery_at = now() where id = ${p.id}`;
     const q = toQuery(p);
-    const sources = SOURCES.filter((s) => s.search && (p.include_refurb || s.kind !== 'refurb'));
+    const sources = SOURCES.filter((s) => s.search && availableHere(s) && (p.include_refurb || s.kind !== 'refurb'));
     const results = await Promise.allSettled(sources.map(async (s) => {
       const t0 = Date.now();
       try {

@@ -1,6 +1,7 @@
 // Fällige Abfrageziele abrufen, Angebote speichern, Preisverlauf fortschreiben
 import { db } from '../db.ts';
-import { sourceByKey } from '../adapters/registry.ts';
+import { sourceByKey, availableHere, IS_HOME } from '../adapters/registry.ts';
+import { needsHomeUrl } from '../adapters/shops.ts';
 import { toQuery } from '../products.ts';
 import { blockedSources, recordSourceResult } from './health.ts';
 import type { OfferData } from '../adapters/types.ts';
@@ -31,6 +32,9 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
   const bySource = new Map<string, DueListing[]>();
   for (const l of due) {
     if (blocked.has(l.source)) continue;
+    const ad = sourceByKey(l.source);
+    if (!ad || !availableHere(ad)) continue;
+    if (l.source === 'shop' && !IS_HOME && needsHomeUrl(l.url)) continue;
     const arr = bySource.get(l.source) ?? [];
     arr.push(l);
     bySource.set(l.source, arr);
