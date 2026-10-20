@@ -31,11 +31,30 @@ async function explore(arg: string) {
   }
 }
 
+async function browseExplore(arg: string) {
+  const { browse, closeBrowser } = await import('./util/browser.ts');
+  const [tag, rest] = arg.includes('|') ? arg.split('|', 2) : ['browse', arg];
+  try {
+    for (const url of rest.split(/\s+/).filter(Boolean)) {
+      try {
+        const country = /amazon\.(fr|it|es|nl)/.exec(url)?.[1]?.toUpperCase() ?? 'DE';
+        const p = await browse(url, { country, captureRe: /api|graphql|search|offer|price/i });
+        await debugLog(tag, { url, status: p.status, finalUrl: p.url, body: p.html, headers: { captured: p.json.slice(0, 20) } });
+        console.log('::notice::OK ' + p.status + ' ' + url + ' ' + p.html.length);
+      } catch (e) {
+        await debugLog(tag, { url, note: `FEHLER: ${(e as Error).message}` });
+        console.log('::warning::FEHLER ' + url + ' ' + (e as Error).message);
+      }
+    }
+  } finally { await closeBrowser(); }
+}
+
 async function main() {
   const started = Date.now();
   try {
     switch (cmd) {
       case 'explore': await explore(arg); break;
+      case 'browse': await browseExplore(arg); break;
       case 'run': { const { runAll } = await import('./run.ts'); await runAll(arg); break; }
       case 'adapter': { const { testAdapter } = await import('./devtools.ts'); await testAdapter(arg); break; }
       case 'deals': { const { testDeals } = await import('./devtools.ts'); await testDeals(arg); break; }

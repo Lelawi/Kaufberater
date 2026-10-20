@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       cmd:
-        description: Befehl (explore, adapter, deals, run)
+        description: Befehl (explore, browse, adapter, deals, run)
         required: true
         default: explore
       arg:
@@ -19,7 +19,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: npm install --no-audit --no-fund
-      - run: if [ "$CMD" = dbtest ]; then node worker/src/dbtest.ts; else node worker/src/cli.ts "$CMD" "$ARG"; fi
+      - name: Browser installieren
+        if: inputs.cmd == 'browse' || inputs.cmd == 'adapter' || inputs.cmd == 'run'
+        run: npx playwright install chromium --with-deps --only-shell
+      - run: node worker/src/cli.ts "$CMD" "$ARG"
         env:
           CMD: ${{ inputs.cmd }}
           ARG: ${{ inputs.arg }}
