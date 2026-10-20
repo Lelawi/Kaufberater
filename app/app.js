@@ -202,7 +202,7 @@ async function viewEdit(id) {
     if (res.error) { btn.disabled = false; return toast(res.error.message); }
     const link = g('link')?.value.trim();
     if (link) await sb.rpc('kb_add_listing', { p_product: res.data.id, p_url: link });
-    toast(id ? 'Gespeichert' : 'Eingetragen – die Suche startet beim nächsten Durchlauf');
+    toast(id ? 'Gespeichert' : 'Eingetragen – die Preissuche startet gleich');
     location.hash = '#/p/' + res.data.id;
   });
 }
@@ -252,7 +252,7 @@ async function viewProduct(id) {
         ${a.expected_low ? html`<dt>Erwarteter Tiefstpreis</dt><dd class="num">${fmtEur(a.expected_low)}</dd>` : ''}
         <dt>Stand</dt><dd>${fmtDate(a.created_at)}</dd>
       </dl>
-    </section>` : html`<section class="panel flat"><h2>Einschätzung</h2><p class="muted">${p.analysis_status === 'failed' ? 'Die Analyse ist fehlgeschlagen und wird erneut versucht.' : 'Die Tiefenanalyse (Preisgeschichte, Aktionstage, Alternativen) läuft einmal täglich und erscheint dann hier.'}</p></section>`}
+    </section>` : html`<section class="panel flat"><h2>Einschätzung</h2><p class="muted">${p.analysis_status === 'failed' ? 'Die Analyse ist fehlgeschlagen und wird erneut versucht.' : 'Die Tiefenanalyse (Preisgeschichte, Vorgänger, Aktionstage, Alternativen) läuft jeden Morgen und erscheint dann hier. Bis dahin gelten vorläufige Schwellen aus den gefundenen Preisen.'}</p></section>`}
 
   <section class="panel">
     <h2>Kaufschwellen</h2>
@@ -261,7 +261,10 @@ async function viewProduct(id) {
       <div class="field"><label for="tt">Top-Preis</label><input id="tt" type="number" step="1" inputmode="decimal" value="${p.threshold_top ?? ''}"></div>
       <div class="field"><label for="ti">Sofort kaufen</label><input id="ti" type="number" step="1" inputmode="decimal" value="${p.threshold_instant ?? ''}"></div>
     </form>
-    <p class="hint">${p.thresholds_manual ? 'Von dir festgelegt – die Analyse ändert sie nicht mehr.' : 'Von der Analyse vorgeschlagen. Wenn du sie änderst, gelten deine Werte.'}</p>
+    <p class="hint">${p.thresholds_manual ? 'Von dir festgelegt – die Analyse ändert sie nicht mehr.'
+      : p.threshold_source === 'auto' ? 'Vorläufig aus den gefundenen Preisen und früheren Deals berechnet. Die Tiefenanalyse verfeinert sie am nächsten Morgen. Wenn du sie änderst, gelten deine Werte.'
+      : p.threshold_good ? 'Von der Tiefenanalyse festgelegt. Wenn du sie änderst, gelten deine Werte.'
+      : 'Werden nach der ersten Preissuche automatisch gesetzt.'}</p>
     <div class="btn-row"><button class="btn small" id="saveThr">Schwellen speichern</button>${p.thresholds_manual ? html`<button class="btn small ghost" id="autoThr">Wieder der Analyse überlassen</button>` : ''}</div>
   </section>
 
@@ -310,11 +313,11 @@ async function viewProduct(id) {
   // Aktionen
   const num = (x) => (document.getElementById(x).value ? Number(document.getElementById(x).value) : null);
   document.getElementById('saveThr').onclick = async () => {
-    const { error } = await sb.from('kb_products').update({ threshold_good: num('tg'), threshold_top: num('tt'), threshold_instant: num('ti'), thresholds_manual: true }).eq('id', id);
+    const { error } = await sb.from('kb_products').update({ threshold_good: num('tg'), threshold_top: num('tt'), threshold_instant: num('ti'), thresholds_manual: true, threshold_source: 'manual' }).eq('id', id);
     toast(error ? error.message : 'Schwellen gespeichert'); if (!error) route();
   };
   document.getElementById('autoThr')?.addEventListener('click', async () => {
-    await sb.from('kb_products').update({ thresholds_manual: false, analysis_status: 'queued', analysis_due_at: new Date().toISOString() }).eq('id', id);
+    await sb.from('kb_products').update({ thresholds_manual: false, threshold_source: null, analysis_status: 'queued', analysis_due_at: new Date().toISOString() }).eq('id', id);
     toast('Die nächste Analyse setzt die Schwellen neu'); route();
   });
   document.getElementById('reanalyse').onclick = async () => {

@@ -29,3 +29,13 @@ test('Zustand erkennen', () => {
   assert.equal(conditionFromTitle('iPhone 15 generalüberholt'), 'refurbished');
   assert.equal(conditionFromTitle('LG OLED77G68LW evo'), 'new');
 });
+
+import { computeThresholds } from '../src/jobs/autothresholds.ts';
+test('Vorläufige Schwellen', () => {
+  const t = computeThresholds(2599, 2599, [2474, 2593, 2599, 2649, 3238, 3538, 2349]);
+  assert.ok(t.good > t.top && t.top > t.instant, JSON.stringify(t));
+  assert.ok(t.good < 2599 && t.instant < 2474, JSON.stringify(t));
+  const n = computeThresholds(289, null, []);
+  assert.ok(n.good < 289 && n.instant < n.top, JSON.stringify(n));
+  console.log(t, n);
+});
