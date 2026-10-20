@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "worker": "node worker/src/cli.ts",
-    "test": "node --test worker/test/",
+    "test": "node --test worker/test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -19,8 +19,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "@types/web-push": "^3.6.4",
     "@types/nodemailer": "^6.4.17",
+    "@types/web-push": "^3.6.4",
     "typescript": "^5.9.3"
   }
 }
