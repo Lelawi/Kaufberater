@@ -82,9 +82,17 @@ async function main() {
         // Wenn der Raspberry Pi in den letzten 30 Minuten gelaufen ist, macht GitHub Pause (spart Freiminuten)
         const sql = await db();
         const r = await sql`select 1 from kb_runs where kind like 'run:%:home' and finished_at > now() - interval '30 minutes' limit 1`;
+        // Freiminuten schonen: verbrauchte GitHub-Minuten in diesem Monat schätzen (pro Lauf aufgerundet + ~1 Min. Einrichtung)
+        const [u] = await sql`select coalesce(sum(ceil(extract(epoch from (finished_at - started_at)) / 60.0) + 1), 0)::int as min
+                              from kb_runs where kind like 'run:%:github' and started_at >= date_trunc('month', now())`;
+        const dayOfMonth = new Date().getUTCDate();
+        const projected = (u.min / Math.max(1, dayOfMonth)) * 31;
+        // Ab ~1.700 Minuten Hochrechnung: nur noch jede zweite Stunde (GitHub stoppt sonst bei 2.000)
+        const thin = projected > 1700 && new Date().getUTCHours() % 2 === 1;
+        const skip = r.length > 0 || thin;
         const { appendFileSync } = await import('node:fs');
-        if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `skip=${r.length > 0}\n`);
-        console.log('Heim-Rechner aktiv:', r.length > 0);
+        if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `skip=${skip}\n`);
+        console.log(`Heim-Rechner aktiv: ${r.length > 0}, GitHub-Minuten diesen Monat ~${u.min}, Hochrechnung ~${Math.round(projected)}, ausdünnen: ${thin}`);
         break;
       }
       default: throw new Error(`Unbekannter Befehl: ${cmd}`);
