@@ -1,0 +1,37 @@
+name: worker
+# Regelmäßige Preisabfrage. Private Repos haben 2.000 Freiminuten/Monat → stündlich tagsüber, nachts seltener.
+# Sobald der Raspberry Pi läuft, übernimmt er (alle 10 Minuten, alle Shops) und dieser Ablauf dient als Reserve.
+on:
+  schedule:
+    - cron: '7 4-21 * * *'     # stündlich 06:07–23:07 Uhr (Sommerzeit)
+    - cron: '7 0 * * *'        # nachts einmal
+  workflow_dispatch:
+    inputs:
+      arg:
+        description: 'all | checks | deals | discovery | product:<id>'
+        required: false
+        default: all
+concurrency:
+  group: worker
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm install --no-audit --no-fund --omit=dev
+        env: { PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1' }
+      - name: Pausieren, wenn der Heim-Rechner aktiv ist
+        id: home
+        run: node worker/src/cli.ts homecheck
+        env: { KB_DB_PASSWORD: '${{ secrets.KB_DB_PASSWORD }}' }
+      - name: Durchlauf
+        if: steps.home.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
+        run: node worker/src/cli.ts run "${{ inputs.arg || 'all' }}"
+        env:
+          KB_DB_PASSWORD: ${{ secrets.KB_DB_PASSWORD }}
+          KB_RUNNER: github
+          KB_BUDGET_MINUTES: '8'

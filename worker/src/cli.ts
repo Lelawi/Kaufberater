@@ -28,6 +28,14 @@ async function explore(arg: string) {
     reqs = rest.split(/\s+/).filter(Boolean).map((url) => ({ url }));
   }
   for (const r of reqs) {
+    if (/\.(woff2|png|jpg|webp|gz|zip)(\?|$)/.test(r.url)) {
+      // Binärdateien unverändert ablegen
+      const res = await fetch(r.url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' } });
+      mkdirSync(`dumps/${tag}`, { recursive: true });
+      writeFileSync(`dumps/${tag}/${r.url.split('/').pop()!.split('?')[0]}`, Buffer.from(await res.arrayBuffer()));
+      console.log('BIN', res.status, r.url);
+      continue;
+    }
     try {
       const p = await fetchPage(r.url, { country: r.country, headers: r.headers, method: r.method, body: r.body, json: r.json, retries: 0, allowStatus: [400, 401, 403, 404, 410, 429, 500, 503] });
       const hdr: Record<string, string> = {};
@@ -70,6 +78,15 @@ async function main() {
       case 'run': { const { runAll } = await import('./run.ts'); await runAll(arg); break; }
       case 'adapter': { const { testAdapter } = await import('./devtools.ts'); await testAdapter(arg); break; }
       case 'deals': { const { testDeals } = await import('./devtools.ts'); await testDeals(arg); break; }
+      case 'homecheck': {
+        // Wenn der Raspberry Pi in den letzten 30 Minuten gelaufen ist, macht GitHub Pause (spart Freiminuten)
+        const sql = await db();
+        const r = await sql`select 1 from kb_runs where kind like 'run:%:home' and finished_at > now() - interval '30 minutes' limit 1`;
+        const { appendFileSync } = await import('node:fs');
+        if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `skip=${r.length > 0}\n`);
+        console.log('Heim-Rechner aktiv:', r.length > 0);
+        break;
+      }
       default: throw new Error(`Unbekannter Befehl: ${cmd}`);
     }
   } catch (e) {
