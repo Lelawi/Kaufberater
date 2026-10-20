@@ -2,7 +2,7 @@
 import postgres from 'postgres';
 
 const REF = 'obxwqvmmirmbfktjvhxf';
-const HOSTS = ['aws-1-eu-central-1.pooler.supabase.com', 'aws-0-eu-central-1.pooler.supabase.com'];
+const HOSTS = ['aws-1-eu-central-1.pooler.supabase.com'];
 
 export type Sql = postgres.Sql<{}>;
 
