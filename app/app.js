@@ -60,7 +60,7 @@ function viewLogin(mode = 'login') {
       <div class="field"><label for="pw">Passwort${signup ? html` <span class="muted">(mind. 8 Zeichen)</span>` : ''}</label><input id="pw" type="password" minlength="${signup ? 8 : 1}" autocomplete="${signup ? 'new-password' : 'current-password'}" required></div>
       <button class="btn block" type="submit">${signup ? 'Konto erstellen' : 'Anmelden'}</button>
       <p id="err" class="hint" style="margin-top:12px" role="alert"></p>
-      <p class="hint" style="margin-top:12px">${signup ? html`Schon ein Konto? <a href="#" id="sw">Anmelden</a>` : html`Noch kein Konto? <a href="#" id="sw">Konto erstellen</a>`}</p>
+      <p class="hint" style="margin-top:12px">${signup ? html`Schon ein Konto? <a href="#" id="sw">Anmelden</a>` : html`Gleiches Konto wie bei MarsiHome.<a href="#" id="sw" hidden></a>`}</p>
     </form></div>`);
   document.getElementById('sw').addEventListener('click', (e) => { e.preventDefault(); viewLogin(signup ? 'login' : 'signup'); });
   document.getElementById('f').addEventListener('submit', async (e) => {
