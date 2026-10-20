@@ -33,7 +33,7 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
                   ${d.voucherCode ?? null}, ${d.score}, ${notes})
           on conflict (product_id, portal, external_id) do update set
             temperature = excluded.temperature, comment_count = excluded.comment_count, expired = excluded.expired,
-            price = coalesce(excluded.price, kb_deals.price)
+            price = coalesce(excluded.price, kb_deals.price), notes = excluded.notes, match_score = excluded.match_score
           returning (xmax = 0) as inserted`;
         const isNew = r[0]?.inserted;
         if (isNew) stats.newDeals++;
