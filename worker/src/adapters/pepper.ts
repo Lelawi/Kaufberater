@@ -15,13 +15,21 @@ const PORTALS: Portal[] = [
 ];
 
 /** Händler im Ausland, die verlässlich nach Deutschland liefern */
-const SHIPS_TO_DE = ['amazon', 'ebay', 'ldlc', 'pccomponentes', 'galaxus', 'digitec', 'alza', 'coolblue', 'bol', 'notebooksbilliger', 'cyberport', 'proshop', 'lg', 'samsung', 'apple', 'dyson', 'aliexpress', 'otto', 'mediamarkt', 'saturn'];
+const SHIPS_TO_DE = ['amazon', 'ebay', 'ldlc', 'pccomponentes', 'alza', 'aliexpress', 'galaxus', 'digitec', 'bol', 'coolblue'];
 
 export function shipsToDE(portalCountry: string, merchant: string | null | undefined, title: string): boolean {
   if (portalCountry === 'DE' || portalCountry === 'AT') return true;
   const m = norm(merchant ?? '').toLowerCase();
   if (!m) return /amazon/i.test(title);
   return SHIPS_TO_DE.some((s) => m === s || m.startsWith(s));
+}
+
+/** "[eff. 2474,-]", "(effektiv 2.474 €)", "eff. 3440" → 2474 / 3440 */
+export function effectivePrice(title: string): number | null {
+  const m = title.match(/\beff(?:ektiv|\.)?\s*:?\s*(\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*(?:,-|€|euro)?/i);
+  if (!m) return null;
+  const v = Number(m[1].replace(/[.\s]/g, '').replace(',', '.'));
+  return Number.isFinite(v) && v > 0 ? v : null;
 }
 
 export function parsePepperList(html: string, portal: Portal): DealData[] {
@@ -39,7 +47,7 @@ export function parsePepperList(html: string, portal: Portal): DealData[] {
       title: String(t.title ?? ''),
       url: `https://${portal.host}/deals/${t.titleSlug ?? 'x'}-${t.threadId}`,
       merchant: t.merchant?.merchantName ?? t.linkHost ?? null,
-      price: typeof t.price === 'number' && t.price > 0 ? t.price : null,
+      price: effectivePrice(String(t.title ?? '')) ?? (typeof t.price === 'number' && t.price > 0 ? t.price : null),
       nextBestPrice: typeof t.nextBestPrice === 'number' && t.nextBestPrice > 0 ? t.nextBestPrice : null,
       temperature: typeof t.temperature === 'number' ? t.temperature : null,
       commentCount: t.commentCount ?? null,

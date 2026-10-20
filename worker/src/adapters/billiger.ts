@@ -7,6 +7,7 @@ import { cleanText, conditionFromTitle } from './common.ts';
 import type { Candidate, ListingRef, OfferData, SourceAdapter } from './types.ts';
 
 const BASE = 'https://www.billiger.de';
+const GO_URL = 'https://lelawi.github.io/Kaufberater-app/go.html';
 
 export function parseBilligerSearch(html: string, q: ProductQuery): Candidate[] {
   const $ = loadHtml(html);
@@ -39,12 +40,14 @@ export function parseBilligerOffers(html: string, pageUrl: string): { offers: Of
     const shipM = text.match(/ab\s*([\d.]+,\d{2})\s*€\s*Versand/);
     const shipping = shipM ? parsePrice(shipM[1]) ?? 0 : null;
     const title = cleanText(row.find('[data-offer-title], h3, .line-clamp-2').first().text()) || text.split(/\d+[.,]\d{2}\s*€/)[0].slice(0, 200);
-    const link = row.find('a[href*="/modules/cpc"], a[href*="redirect"], a[data-econda-marker*="ZumAnbieter"], a:contains("Zum Anbieter")').attr('href');
+    // billiger.de leitet per Formular weiter (data-submit = Weiterleitungs-Token) → eigene Weiterleitungsseite der App
+    const token = row.find('[data-submit]').first().attr('data-submit');
+    const link = token && /^[A-Za-z0-9_-]{20,2000}$/.test(token) ? `${GO_URL}?b=${token}` : undefined;
     const delivery = text.match(/Lieferzeit:\s*([^]+?)(?:Abholung|Shop-Info|Zum Anbieter|$)/)?.[1]?.trim();
     out.push({
       offerKey: `o:${row.attr('data-shop-id') ?? shop}`,
       shop, country: 'DE', condition: conditionFromTitle(title), title,
-      url: link ? new URL(link, BASE).toString() : pageUrl,
+      url: link ?? pageUrl,
       price, shipping: shipping === 0 && shipM ? 0 : shipping,
       inStock: !/nicht lieferbar|ausverkauft/i.test(text),
       deliveryText: delivery?.slice(0, 120),

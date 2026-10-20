@@ -42,15 +42,20 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
   const sql = await db();
   const products = await sql`
     select id, user_id, name, best_price, lowest_seen from kb_products
-    where status = 'watching' and not thresholds_manual and threshold_good is null and best_price is not null
+    where status = 'watching' and not thresholds_manual and best_price is not null
+      and (threshold_good is null or threshold_source = 'auto')
       and (${opts.productId ?? null}::uuid is null or id = ${opts.productId ?? null}::uuid)`;
   let set = 0;
   for (const p of products) {
+    // Nur Deals, die in Deutschland erreichbar waren (Auslands-Deals sind mit einer Notiz markiert)
     const deals = await sql`select price from kb_deals where product_id = ${p.id} and price is not null and match_score >= 0.85
-                            and (posted_at is null or posted_at > now() - interval '18 months')`;
+                            and notes is null and (posted_at is null or posted_at > now() - interval '18 months')`;
     const t = computeThresholds(Number(p.best_price), p.lowest_seen ? Number(p.lowest_seen) : null, deals.map((d) => Number(d.price)));
-    await sql`update kb_products set threshold_good = ${t.good}, threshold_top = ${t.top}, threshold_instant = ${t.instant}, threshold_source = 'auto'
-              where id = ${p.id} and threshold_good is null and not thresholds_manual`;
+    const upd = await sql`update kb_products set threshold_good = ${t.good}, threshold_top = ${t.top}, threshold_instant = ${t.instant}, threshold_source = 'auto'
+              where id = ${p.id} and not thresholds_manual and (threshold_good is null or threshold_source = 'auto')
+                and (threshold_good, threshold_top, threshold_instant) is distinct from (${t.good}::numeric, ${t.top}::numeric, ${t.instant}::numeric)
+              returning id`;
+    if (!upd.length) continue;
     await createAlert({
       userId: p.user_id, productId: p.id, kind: 'analysis', level: 'info',
       title: `${p.name}: Preisüberwachung läuft`,

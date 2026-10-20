@@ -48,3 +48,12 @@ test('Kurze Modellnummer und Varianten', () => {
   assert.ok(matchTitle({ name: 'Samsung S921', model: 'S921' }, 'Samsung Galaxy S9210').score < 0.75);
   assert.deepEqual(variantCodes({ name: 'LG Oled77g6', model: 'OLED77G6' }, 'LG OLED77G68LW evo 77 Zoll').sort(), ['OLED77G68LW']);
 });
+
+import { effectivePrice } from '../src/adapters/pepper.ts';
+test('Effektivpreis aus Deal-Titel', () => {
+  assert.equal(effectivePrice('[ eff. 2474,-] LG OLED77G68LW Gallery Design'), 2474);
+  assert.equal(effectivePrice('LG 2026 77 G6 (eff. 3440) OLED77G68LW'), 3440);
+  assert.equal(effectivePrice('[CB] (eff. 2788,-) LG OLED77G67LW'), 2788);
+  assert.equal(effectivePrice('effektiv 2.474,50 €'), 2474.5);
+  assert.equal(effectivePrice('LG OLED77G68LW Berlet'), null);
+});
