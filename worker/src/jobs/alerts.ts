@@ -48,10 +48,10 @@ const APP_URL = 'https://lelawi.github.io/Kaufberater-app/';
 export async function deliverAlerts() {
   const sql = await db();
   const pending = await sql`
-    select a.*, s.push_alerts, s.email_alerts, s.alert_email, s.quiet_from::text as quiet_from, s.quiet_to::text as quiet_to, u.email as user_email
+    select a.*, s.push_alerts, s.email_alerts, s.alert_email, s.quiet_from::text as quiet_from, s.quiet_to::text as quiet_to,
+           kb_user_email(a.user_id) as user_email
     from kb_alerts a
     left join kb_settings s on s.user_id = a.user_id
-    join auth.users u on u.id = a.user_id
     where a.push_sent_at is null and a.created_at > now() - interval '2 days'
     order by a.created_at limit 100`;
   const stats = { push: 0, email: 0, failed: 0 };
