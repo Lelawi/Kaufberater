@@ -140,7 +140,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
           title: `Jetzt ist der empfohlene Kaufzeitraum: ${p.name}`,
           body: `${rec.best_buy_window ?? ''}. Aktuell bester Preis: ${fmtEur(best.eff)} bei ${best.o.shop}` +
             (lvl && lvl !== 'wait' ? ` – das ist ein ${LEVEL_LABEL[lvl] ?? 'guter Preis'}.` : `. Die Schwellen sind noch nicht erreicht; schau dir die Angebote trotzdem an.`),
-          url: best.o.url, dedupKey: `when:${p.id}:${String(rec.best_buy_date).slice(0, 10)}`,
+          url: best.o.url, dedupKey: `when:${p.id}:${new Date(rec.best_buy_date).toISOString().slice(0, 10)}`,
         });
       }
     }
