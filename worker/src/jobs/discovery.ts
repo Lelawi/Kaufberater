@@ -48,7 +48,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
       const good = cands
         .filter((c: Candidate) => c.score >= MIN_SCORE)
         .sort((a: Candidate, b: Candidate) => b.score - a.score)
-        .slice(0, source.kind === 'aggregator' ? 2 : MAX_PER_SOURCE);
+        .slice(0, source.kind === 'aggregator' ? 4 : MAX_PER_SOURCE);
       for (const c of good) {
         for (const v of variantCodes(q, c.title ?? '')) learned.add(v);
         const ins = await sql`
