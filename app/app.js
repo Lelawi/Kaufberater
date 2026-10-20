@@ -49,24 +49,39 @@ async function refreshBadge() {
 }
 
 // ---------- Anmeldung ----------
-function viewLogin() {
+function viewLogin(mode = 'login') {
+  const signup = mode === 'signup';
   render(html`<div class="login">
     <img class="mark" src="icons/icon-192.png" alt="">
     <h1>Kaufberater</h1>
     <p>Trag ein, was du kaufen willst. Die App beobachtet die Preise und meldet sich, wenn es sich lohnt.</p>
     <form id="f">
       <div class="field"><label for="email">E-Mail</label><input id="email" type="email" autocomplete="username" required></div>
-      <div class="field"><label for="pw">Passwort</label><input id="pw" type="password" autocomplete="current-password" required></div>
-      <button class="btn block" type="submit">Anmelden</button>
-      <p class="hint" style="margin-top:12px">Gleiches Konto wie bei MarsiHome.</p>
-      <p id="err" class="hint" style="color:var(--warn)" role="alert"></p>
+      <div class="field"><label for="pw">Passwort${signup ? html` <span class="muted">(mind. 8 Zeichen)</span>` : ''}</label><input id="pw" type="password" minlength="${signup ? 8 : 1}" autocomplete="${signup ? 'new-password' : 'current-password'}" required></div>
+      <button class="btn block" type="submit">${signup ? 'Konto erstellen' : 'Anmelden'}</button>
+      <p id="err" class="hint" style="margin-top:12px" role="alert"></p>
+      <p class="hint" style="margin-top:12px">${signup ? html`Schon ein Konto? <a href="#" id="sw">Anmelden</a>` : html`Noch kein Konto? <a href="#" id="sw">Konto erstellen</a>`}</p>
     </form></div>`);
+  document.getElementById('sw').addEventListener('click', (e) => { e.preventDefault(); viewLogin(signup ? 'login' : 'signup'); });
   document.getElementById('f').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const err = document.getElementById('err'); err.style.color = 'var(--warn)';
     const btn = e.target.querySelector('button'); btn.disabled = true;
-    const { error } = await sb.auth.signInWithPassword({ email: document.getElementById('email').value.trim(), password: document.getElementById('pw').value });
+    const email = document.getElementById('email').value.trim(); const password = document.getElementById('pw').value;
+    if (signup) {
+      const { data, error } = await sb.auth.signUp({ email, password });
+      btn.disabled = false;
+      if (error) { err.textContent = error.message; return; }
+      if (!data.session) {
+        err.style.color = 'var(--ink-2)';
+        err.textContent = 'Fast geschafft: Du bekommst eine E-Mail. Tippe dort auf den Bestätigungslink (die Seite danach kannst du schließen) und melde dich dann hier an.';
+        setTimeout(() => viewLogin('login'), 9000);
+      }
+      return;
+    }
+    const { error } = await sb.auth.signInWithPassword({ email, password });
     btn.disabled = false;
-    if (error) document.getElementById('err').textContent = error.message === 'Invalid login credentials' ? 'E-Mail oder Passwort stimmt nicht.' : error.message;
+    if (error) err.textContent = error.message === 'Invalid login credentials' ? 'E-Mail oder Passwort stimmt nicht.' : error.message === 'Email not confirmed' ? 'Bitte zuerst den Link in der Bestätigungs-E-Mail antippen.' : error.message;
   });
 }
 
