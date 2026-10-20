@@ -129,6 +129,22 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       });
     }
 
+    // 5b) Von der Tiefenanalyse empfohlener Kaufzeitpunkt ist da
+    const [rec] = await sql`select best_buy_date, best_buy_window from kb_analyses where product_id = ${p.id} order by created_at desc limit 1`;
+    if (best && rec?.best_buy_date) {
+      const d0 = new Date(rec.best_buy_date).getTime();
+      if (Date.now() >= d0 - 12 * 3600_000 && Date.now() <= d0 + 4 * 86400_000) {
+        const lvl = levels.find(([, t]) => t !== null && best.eff <= t!)?.[0];
+        stats.alerts += await createAlert({
+          userId: p.user_id, productId: p.id, kind: 'analysis', level: lvl === 'instant' || lvl === 'top' ? 'top' : 'info',
+          title: `Jetzt ist der empfohlene Kaufzeitraum: ${p.name}`,
+          body: `${rec.best_buy_window ?? ''}. Aktuell bester Preis: ${fmtEur(best.eff)} bei ${best.o.shop}` +
+            (lvl && lvl !== 'wait' ? ` – das ist ein ${LEVEL_LABEL[lvl] ?? 'guter Preis'}.` : `. Die Schwellen sind noch nicht erreicht; schau dir die Angebote trotzdem an.`),
+          url: best.o.url, dedupKey: `when:${p.id}:${String(rec.best_buy_date).slice(0, 10)}`,
+        });
+      }
+    }
+
     // 6) Hartes Zeitfenster läuft ab
     if (p.window_type === 'hard' && p.window_end && best) {
       const daysLeft = Math.ceil((new Date(p.window_end).getTime() - Date.now()) / 86400000);
