@@ -39,3 +39,12 @@ test('Vorläufige Schwellen', () => {
   assert.ok(n.good < 289 && n.instant < n.top, JSON.stringify(n));
   console.log(t, n);
 });
+
+import { variantCodes } from '../src/util/match.ts';
+test('Kurze Modellnummer und Varianten', () => {
+  const q = { name: 'LG OLED 77G6', model: '77G6' };
+  assert.ok(matchTitle(q, 'LG OLED77G68LW (77 Zoll)').score >= 0.9);
+  assert.ok(matchTitle(q, 'LG OLED77G58LW (77 Zoll)').score < 0.75);
+  assert.ok(matchTitle({ name: 'Samsung S921', model: 'S921' }, 'Samsung Galaxy S9210').score < 0.75);
+  assert.deepEqual(variantCodes({ name: 'LG Oled77g6', model: 'OLED77G6' }, 'LG OLED77G68LW evo 77 Zoll').sort(), ['OLED77G68LW']);
+});

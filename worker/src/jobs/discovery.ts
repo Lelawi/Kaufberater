@@ -4,6 +4,7 @@ import { SOURCES, availableHere } from '../adapters/registry.ts';
 import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
 import type { Candidate } from '../adapters/types.ts';
+import { variantCodes } from '../util/match.ts';
 
 const MIN_SCORE = 0.75;
 const MAX_PER_SOURCE = 3;
@@ -12,7 +13,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
   const sql = await db();
   const products = await sql<ProductRow[]>`
     select * from kb_products
-    where status in ('watching','bought')
+    where status in ('watching','bought') and (not name_auto or created_at < now() - interval '1 hour')
       and (${onlyProductId ?? null}::uuid is null or id = ${onlyProductId ?? null}::uuid)
       and (discovery_status = 'pending'
            or (discovery_status in ('done','failed') and discovery_at < now() - interval '7 days')
@@ -39,6 +40,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
       }
     }));
     let ok = 0;
+    const learned = new Set<string>();
     for (const r of results) {
       if (r.status !== 'fulfilled') continue;
       ok++;
@@ -48,6 +50,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
         .sort((a: Candidate, b: Candidate) => b.score - a.score)
         .slice(0, source.kind === 'aggregator' ? 2 : MAX_PER_SOURCE);
       for (const c of good) {
+        for (const v of variantCodes(q, c.title ?? '')) learned.add(v);
         const ins = await sql`
           insert into kb_listings (product_id, user_id, source, country, external_id, url, title, condition, discovered_by, match_score, next_check_at)
           values (${p.id}, ${p.user_id}, ${source.key}, ${c.country}, ${c.externalId}, ${c.url}, ${c.title?.slice(0, 500) ?? null},
@@ -58,7 +61,10 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
         if (ins[0]?.inserted) listingsAdded++;
       }
     }
-    await sql`update kb_products set discovery_status = ${ok > 0 ? 'done' : 'failed'}, discovery_at = now() where id = ${p.id}`;
+    // Gefundene Modellvarianten (z. B. OLED77G68LW, OLED77G67LW) merken: verbessert die Deal-Suche und spätere Suchen
+    const newTerms = [...learned].filter((v) => !(p.search_terms ?? []).map((x) => x.toUpperCase()).includes(v)).slice(0, 6);
+    await sql`update kb_products set discovery_status = ${ok > 0 ? 'done' : 'failed'}, discovery_at = now(),
+              search_terms = ${[...(p.search_terms ?? []), ...newTerms]} where id = ${p.id}`;
   }
   return { products: products.length, listingsAdded };
 }

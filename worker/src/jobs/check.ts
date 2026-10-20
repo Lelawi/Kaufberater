@@ -9,7 +9,7 @@ import type { OfferData } from '../adapters/types.ts';
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
   condition: 'new' | 'refurbished' | 'used' | 'bware'; title: string | null; check_interval_minutes: number; error_count: number;
-  p_name: string; p_brand: string | null; p_model: string | null; p_ean: string | null; p_terms: string[]; p_exclude: string[];
+  p_name: string; p_name_auto: boolean; p_brand: string | null; p_model: string | null; p_ean: string | null; p_terms: string[]; p_exclude: string[];
 }
 
 export async function runChecks(deadline: number, opts: { productId?: string; limit?: number } = {}) {
@@ -18,7 +18,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
   const due = await sql<DueListing[]>`
     select l.id, l.product_id, l.user_id, l.source, l.country, l.external_id, l.url, l.condition, l.title,
            l.check_interval_minutes, l.error_count,
-           p.name as p_name, p.brand as p_brand, p.model as p_model, p.ean as p_ean,
+           p.name as p_name, p.name_auto as p_name_auto, p.brand as p_brand, p.model as p_model, p.ean as p_ean,
            p.search_terms as p_terms, p.exclude_terms as p_exclude
     from kb_listings l join kb_products p on p.id = l.product_id
     where l.active and not l.rejected
@@ -52,6 +52,14 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
           toQuery({ id: l.product_id, name: l.p_name, brand: l.p_brand, model: l.p_model, ean: l.p_ean, search_terms: l.p_terms, exclude_terms: l.p_exclude }),
         );
         const r = await saveOffers(l, offers.filter((o) => o.shipsToDE !== false && o.price > 0));
+        // Nur per Link eingetragen? Dann den richtigen Produktnamen von der Seite übernehmen und danach überall suchen
+        const pageTitle = offers.find((o) => o.title)?.title;
+        if (l.p_name_auto && pageTitle) {
+          const name = pageTitle.replace(/\s*[|–-]\s*(kaufen|online|bei|im|günstig).*$/i, '').replace(/\s+/g, ' ').trim().slice(0, 100);
+          const model = name.match(/\b([A-Z]{0,6}\d{2,}[A-Z0-9-]{2,})\b/)?.[1] ?? null;
+          await sql`update kb_products set name = ${name}, name_auto = false, model = coalesce(model, ${model}), discovery_status = 'pending' where id = ${l.product_id} and name_auto`;
+          l.p_name_auto = false;
+        }
         stats.offers += r.offers; stats.priceChanges += r.changes; stats.ok++;
         await sql`update kb_listings set last_checked_at = now(), last_ok_at = now(), last_error = null, error_count = 0,
                    next_check_at = now() + make_interval(mins => check_interval_minutes) where id = ${l.id}`;

@@ -85,15 +85,17 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   if (mpn && keys.some((k) => mpn === k || (mpn.startsWith(k) && mpn.length - k.length <= 3))) {
     return { score: 0.97 * penalty, reason: 'Herstellernummer passt' + penaltyReason };
   }
+  // Modellnummer im Titel suchen – pro Wort, damit der Rest des Wortes geprüft werden kann
+  const tokens = (title.toUpperCase().match(/[A-Z0-9][A-Z0-9-]*[A-Z0-9]|[A-Z0-9]/g) ?? []).map((t) => t.replace(/-/g, ''));
   for (const k of keys) {
-    const idx = nt.indexOf(k);
-    if (idx >= 0) {
-      // Nachfolgende Zeichen prüfen: "OLED65C4" passt zu "OLED65C47LA", aber "S921" nicht zu "S9210"
-      const after = nt.slice(idx + k.length, idx + k.length + 1);
-      const sameFamily = after === '' || /[A-Z]/.test(after) || k.length >= 8;
-      const sc = (sameFamily ? 0.92 : 0.6) * penalty;
-      return { score: sc, reason: `Modellnummer ${k} im Titel` + penaltyReason };
-    }
+    // Erst wortgenau, dann über Wortgrenzen hinweg (z. B. "OLED 77G6" vs. "OLED77G6")
+    const tok = tokens.find((t) => t.includes(k)) ?? (nt.includes(k) ? k : null);
+    if (!tok) continue;
+    const rest = tok.slice(tok.indexOf(k) + k.length);
+    // "OLED65C4" passt zu "OLED65C47LA" (Händler-/Farbvariante), aber "S921" nicht zu "S9210" (anderes Modell)
+    const variantSuffix = rest === '' || /^[A-Z]/.test(rest) || (rest.length <= 4 && /[A-Z]/.test(rest)) || k.length >= 8;
+    const sc = (variantSuffix ? 0.92 : 0.6) * penalty;
+    return { score: sc, reason: `Modellnummer ${k} im Titel${rest ? ` (Variante ${tok})` : ''}` + penaltyReason };
   }
 
   // Namensvergleich (für Produkte ohne Modellnummer, z.B. "iPhone 16 Pro 256GB")
@@ -120,4 +122,22 @@ function capacities(s: string): string[] {
 export function searchQuery(p: ProductQuery): string {
   if (p.model && p.model.trim().length >= 4) return [p.brand, p.model].filter(Boolean).join(' ');
   return p.name;
+}
+
+/** Modellnummern aus einem Titel, die die gesuchte Nummer enthalten (z. B. OLED77G68LW für OLED77G6) */
+export function variantCodes(p: ProductQuery, title: string): string[] {
+  const keys = modelKeys(p);
+  if (!keys.length) return [];
+  const out = new Set<string>();
+  for (const t of title.toUpperCase().match(/[A-Z0-9][A-Z0-9-]{3,}[A-Z0-9]/g) ?? []) {
+    const c = t.replace(/-/g, '');
+    if (!/\d/.test(c) || !/[A-Z]/.test(c) || c.length > 20) continue;
+    for (const k of keys) {
+      if (c !== k && c.includes(k)) {
+        const rest = c.slice(c.indexOf(k) + k.length);
+        if (rest.length <= 4 && /[A-Z]/.test(rest + 'A'.repeat(rest === '' ? 1 : 0))) out.add(c);
+      }
+    }
+  }
+  return [...out];
 }

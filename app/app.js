@@ -8,8 +8,12 @@ let session = null;
 
 // ---------- Start ----------
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-sb.auth.onAuthStateChange((_e, s) => { const was = !!session; session = s; if (!!s !== was) route(); });
 session = (await sb.auth.getSession()).data.session;
+sb.auth.onAuthStateChange((ev, s) => {
+  if (ev === 'INITIAL_SESSION') return;
+  const was = !!session; session = s;
+  if (!!s !== was) route();
+});
 window.addEventListener('hashchange', route);
 route();
 setInterval(refreshBadge, 60_000);
@@ -22,13 +26,15 @@ async function route() {
   if (!session) { tabs.hidden = true; return viewLogin(); }
   tabs.hidden = false;
   const h = location.hash.replace(/^#/, '') || '/';
-  const [, a, b] = h.split('/');
+  const [path, qs] = h.split('?');
+  const [, a, b] = path.split('/');
+  const params = new URLSearchParams(qs ?? '');
   try {
     if (!a) { setTab('list'); await viewList(); }
-    else if (a === 'add') { setTab('list'); await viewEdit(null); }
+    else if (a === 'add') { setTab('list'); await viewEdit(null, params); }
     else if (a === 'edit') { setTab('list'); await viewEdit(b); }
     else if (a === 'p') { setTab('list'); await viewProduct(b); }
-    else if (a === 'check') { setTab('check'); await viewCheck(); }
+    else if (a === 'check') { setTab('check'); await viewCheck(params); }
     else if (a === 'alerts') { setTab('alerts'); await viewAlerts(); }
     else if (a === 'settings') { setTab('settings'); await viewSettings(); }
     else location.hash = '#/';
@@ -90,13 +96,14 @@ async function viewList() {
   loading();
   const { data: products, error } = await sb.from('kb_products')
     .select('id,name,brand,model,status,window_start,window_end,window_type,threshold_good,threshold_top,threshold_instant,max_price,best_price,best_refurb_price,lowest_seen,last_checked_at,discovery_status,analysis_status,bought_price,bought_at,return_until,include_refurb,created_at')
-    .neq('status', 'archived').order('created_at', { ascending: false });
+    .order('created_at', { ascending: false });
   if (error) throw error;
-  if (!products.length) {
+  const archived = products.filter((p) => p.status === 'archived');
+  if (!products.some((p) => p.status !== 'archived')) {
     return render(html`<div class="head"><h1>Wunschliste</h1></div>
       <div class="empty panel"><h2>Noch nichts auf der Liste</h2>
       <p>Trag das erste Produkt ein, am besten mit genauer Modellnummer. Die App sucht dann alle Angebote und richtet die Preisüberwachung ein.</p>
-      <a class="btn" href="#/add">Produkt eintragen</a></div>`);
+      <a class="btn" href="#/add">Produkt eintragen</a></div>${archiveBlock(archived)}`);
   }
   const watching = products.filter((p) => p.status === 'watching');
   const hot = watching.filter((p) => ['instant', 'top', 'good'].includes(levelOf(p.best_price, p)));
@@ -108,7 +115,44 @@ async function viewList() {
     ${group('Jetzt interessant', hot)}
     ${group('Beobachten', rest)}
     ${group('Gekauft – Preisschutz aktiv', bought, 'Wird bis zum Ende der Rückgabefrist weiter beobachtet.')}
-    ${group('Pausiert', paused)}`);
+    ${group('Pausiert', paused)}
+    ${archiveBlock(archived)}`);
+  bindArchive();
+  showPushHint();
+}
+
+function archiveBlock(list) {
+  if (!list.length) return '';
+  return html`<details class="more" style="margin-top:24px"><summary>Archiv (${list.length})</summary>
+    <ul class="list-plain panel flat">${list.map((p) => html`<li><span>${p.name}</span><span class="btn-row">
+      <button class="btn small ghost" data-restore="${p.id}">Wiederherstellen</button>
+      <button class="btn small danger" data-del="${p.id}" data-name="${p.name}">Löschen</button></span></li>`)}</ul></details>`;
+}
+function bindArchive() {
+  view.querySelectorAll('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
+    await sb.from('kb_products').update({ status: 'watching' }).eq('id', b.dataset.restore); toast('Wird wieder beobachtet'); route();
+  }));
+  view.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', () => deleteProduct(b.dataset.del, b.dataset.name)));
+}
+async function deleteProduct(id, name) {
+  if (!confirm(`„${name}“ endgültig löschen? Preisverlauf und Analysen gehen verloren.`)) return;
+  const { error } = await sb.from('kb_products').delete().eq('id', id);
+  toast(error ? error.message : 'Gelöscht'); if (!error) { location.hash = '#/'; route(); }
+}
+/** Hinweis oben in der Liste, solange auf diesem Gerät keine Push-Nachrichten eingeschaltet sind */
+async function showPushHint() {
+  try {
+    if (localStorage.getItem('kb-push-hint') === 'off') return;
+    const state = await currentPushState();
+    if (state !== 'off' && !(state === 'unsupported' && /iPhone|iPad/.test(navigator.userAgent))) return;
+    if (document.getElementById('pushHint')) return;
+    const box = document.createElement('div');
+    box.className = 'panel flat'; box.id = 'pushHint';
+    box.innerHTML = String(html`<p style="margin:0 0 8px"><strong>Push-Nachrichten sind noch aus.</strong> Sonst verpasst du Tiefstpreise, die nur ein paar Stunden halten.</p>
+      <div class="btn-row"><a class="btn small" href="#/settings">Einschalten</a><button class="btn small ghost" id="hintOff">Nicht mehr zeigen</button></div>`);
+    view.querySelector('.head')?.after(box);
+    box.querySelector('#hintOff').onclick = () => { try { localStorage.setItem('kb-push-hint', 'off'); } catch { /* */ } box.remove(); };
+  } catch { /* Hinweis ist optional */ }
 }
 
 function row(p) {
@@ -133,7 +177,7 @@ function row(p) {
 }
 
 // ---------- Eintragen / Bearbeiten ----------
-async function viewEdit(id) {
+async function viewEdit(id, params = new URLSearchParams()) {
   let p = { name: '', brand: '', model: '', ean: '', notes: '', window_type: 'soft', include_refurb: true, want_alternative: true, search_terms: [], exclude_terms: [] };
   if (id) {
     loading();
@@ -146,13 +190,13 @@ async function viewEdit(id) {
   <div class="head"><h1>${id ? 'Bearbeiten' : 'Produkt eintragen'}</h1></div>
   <form id="f" class="panel">
     <div class="field"><label for="name">Was willst du kaufen?</label>
-      <input id="name" type="text" required value="${v(p.name)}" placeholder="z. B. LG OLED77G6">
-      <div class="hint">Je genauer, desto besser: Hersteller und Modellnummer.</div></div>
+      <input id="name" type="text" ${id ? 'required' : ''} value="${v(p.name)}" placeholder="z. B. LG OLED77G6">
+      <div class="hint">Je genauer, desto besser: Hersteller und Modellnummer.${id ? '' : ' Oder leer lassen und unten nur einen Link einfügen.'}</div></div>
     <div class="grid-2">
       <div class="field"><label for="brand">Hersteller <span class="muted">(optional)</span></label><input id="brand" type="text" value="${v(p.brand)}" placeholder="LG"></div>
       <div class="field"><label for="model">Modellnummer <span class="muted">(optional)</span></label><input id="model" type="text" value="${v(p.model)}" placeholder="OLED77G6"></div>
     </div>
-    ${id ? '' : html`<div class="field"><label for="link">Link zum Produkt <span class="muted">(optional)</span></label><input id="link" type="url" placeholder="https://…"><div class="hint">Shop-, idealo- oder Amazon-Link. Wird zusätzlich überwacht.</div></div>`}
+    ${id ? '' : html`<div class="field"><label for="link">Link zum Produkt <span class="muted">(optional)</span></label><input id="link" type="url" placeholder="https://…" value="${params.get('u') ?? ''}"><div class="hint">Shop-, idealo- oder Amazon-Link. Wird zusätzlich überwacht.</div></div>`}
     <div class="field"><label>Wann willst du kaufen?</label>
       <div class="grid-2">
         <div><label for="ws" class="muted" style="font-weight:400">frühestens</label><input id="ws" type="date" value="${v(p.window_start)}"></div>
@@ -189,6 +233,14 @@ async function viewEdit(id) {
       include_refurb: g('refurb').checked, want_alternative: g('alt').checked,
       search_terms: split(g('terms').value), exclude_terms: split(g('excl').value),
     };
+    const linkVal = g('link')?.value.trim();
+    if (!row.name) {
+      if (!linkVal) { toast('Bitte einen Namen oder einen Link eingeben'); return; }
+      // Vorläufiger Name aus dem Link; der richtige Name kommt nach dem ersten Abruf der Seite
+      let slug = '';
+      try { const u = new URL(linkVal); slug = decodeURIComponent(u.pathname.split('/').filter((x) => /[a-z].*-.*[a-z]/i.test(x) && !/^(dp|p|product|produkt)$/i.test(x)).sort((a, b) => b.length - a.length)[0] ?? '').replace(/\.html?$/, '').replace(/[-_]+/g, ' '); row.name = (slug || u.host.replace(/^www\./, '') + ' Produkt').slice(0, 120); } catch { row.name = 'Neues Produkt'; }
+      row.name_auto = true;
+    }
     if (!row.model) { const m = row.name.match(/\b([A-Z]{0,6}\d{2,}[A-Z0-9-]{2,})\b/i); if (m) row.model = m[1].toUpperCase(); }
     const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
     let res;
@@ -200,8 +252,7 @@ async function viewEdit(id) {
       res = await sb.from('kb_products').insert(row).select('id').single();
     }
     if (res.error) { btn.disabled = false; return toast(res.error.message); }
-    const link = g('link')?.value.trim();
-    if (link) await sb.rpc('kb_add_listing', { p_product: res.data.id, p_url: link });
+    if (linkVal) await sb.rpc('kb_add_listing', { p_product: res.data.id, p_url: linkVal });
     toast(id ? 'Gespeichert' : 'Eingetragen – die Preissuche startet gleich');
     location.hash = '#/p/' + res.data.id;
   });
@@ -223,8 +274,8 @@ async function viewProduct(id) {
   if (alertsR.data?.length) sb.from('kb_alerts').update({ read_at: new Date().toISOString() }).in('id', alertsR.data.map((a) => a.id)).then(refreshBadge);
   const offers = offersR.data ?? [];
   const a = analysisR.data?.[0];
-  const newOffers = offers.filter((o) => o.condition === 'new');
-  const refurb = offers.filter((o) => o.condition !== 'new');
+  const newOffers = mergeOffers(offers.filter((o) => o.condition === 'new'));
+  const refurb = mergeOffers(offers.filter((o) => o.condition !== 'new'));
   const best = newOffers[0];
   const lvl = levelOf(p.best_price, p);
   const isBought = p.status === 'bought';
@@ -294,7 +345,9 @@ async function viewProduct(id) {
       <a class="btn ghost" href="#/edit/${p.id}">Bearbeiten</a>
       <button class="btn ghost" id="reanalyse">${p.analysis_status === 'queued' ? 'Analyse ist angefordert' : 'Neu analysieren'}</button>
       ${p.status === 'watching' ? html`<button class="btn ghost" id="pause">Pausieren</button>` : p.status === 'paused' ? html`<button class="btn ghost" id="resume">Weiter beobachten</button>` : ''}
+      ${p.status !== 'bought' ? html`<button class="btn ghost" id="checkNow">Jetzt prüfen</button>` : ''}
       <button class="btn danger" id="archive">Archivieren</button>
+      <button class="btn danger" id="delete">Löschen</button>
     </div>
     <form id="boughtForm" hidden style="margin-top:16px">
       <div class="grid-2">
@@ -327,7 +380,13 @@ async function viewProduct(id) {
   const setStatus = async (status, msg) => { await sb.from('kb_products').update({ status }).eq('id', id); toast(msg); location.hash = '#/'; };
   document.getElementById('pause')?.addEventListener('click', () => setStatus('paused', 'Pausiert'));
   document.getElementById('resume')?.addEventListener('click', () => setStatus('watching', 'Wird wieder beobachtet'));
-  document.getElementById('archive').onclick = () => { if (confirm('Produkt archivieren? Es wird nicht mehr beobachtet.')) setStatus('archived', 'Archiviert'); };
+  document.getElementById('archive').onclick = () => { if (confirm('Produkt archivieren? Es wird nicht mehr beobachtet, du findest es unten in der Liste unter „Archiv“.')) setStatus('archived', 'Archiviert'); };
+  document.getElementById('delete').onclick = () => deleteProduct(id, p.name);
+  document.getElementById('checkNow')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    const { data, error } = await sb.rpc('kb_request_check', { p_product: id });
+    toast(error ? error.message : data ? 'Wird jetzt geprüft – dauert etwa 2 Minuten' : 'Vorgemerkt für den nächsten Durchlauf');
+  });
   document.getElementById('boughtBtn')?.addEventListener('click', () => { document.getElementById('boughtForm').hidden = false; document.getElementById('bp').focus(); });
   document.getElementById('boughtForm').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -354,6 +413,24 @@ async function viewProduct(id) {
   });
 }
 
+/** Gleicher Händler über mehrere Preisvergleiche (idealo, billiger.de …) → nur das günstigste Angebot zeigen */
+function normShop(s) {
+  return String(s ?? '').toLowerCase().replace(/\s*\(.*?\)\s*/g, '').replace(/^www\./, '').replace(/\.(de|com|at|fr|it|es|nl|eu)(\/.*)?$/, '')
+    .replace(/online ?shop|onlineshop|\bshop\b|\bgmbh\b/g, '').replace(/[^a-z0-9]/g, '');
+}
+function mergeOffers(list) {
+  const map = new Map();
+  for (const o of list) {
+    const k = normShop(o.shop) + '|' + o.condition;
+    const cur = map.get(k);
+    const price = Number(o.effective_total ?? o.total);
+    if (!cur) { map.set(k, { ...o, via: new Set([o.source]) }); continue; }
+    cur.via.add(o.source);
+    if (price < Number(cur.effective_total ?? cur.total)) map.set(k, { ...o, via: cur.via });
+  }
+  return [...map.values()].sort((a, b) => Number(a.effective_total ?? a.total) - Number(b.effective_total ?? b.total));
+}
+
 function sourceLabel(l) {
   const names = { idealo: 'idealo', billiger: 'billiger.de', geizhals: 'Geizhals', amazon: 'Amazon.de', amazon_fr: 'Amazon.fr', amazon_it: 'Amazon.it', amazon_es: 'Amazon.es', amazon_nl: 'Amazon.nl' };
   let host = ''; try { host = new URL(l.url).host.replace(/^www\./, ''); } catch { /* */ }
@@ -366,7 +443,7 @@ function offerTable(list, showCondition = false) {
     <thead><tr><th>Händler</th><th class="r">Endpreis</th></tr></thead>
     <tbody>${list.slice(0, 25).map((o, i) => html`<tr class="${i === 0 ? 'best' : ''}">
       <td><a class="shop" href="${safeUrl(o.url)}" target="_blank" rel="noopener">${o.shop}</a>${o.country && o.country !== 'DE' ? html` <span class="muted">(${o.country})</span>` : ''}
-        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}</div></td>
+        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${o.source && o.source !== 'shop' ? html`<br>über ${[...(o.via ?? [o.source])].map((v) => ({ idealo: 'idealo', billiger: 'billiger.de', geizhals: 'Geizhals' }[v] ?? v)).join(', ')}` : ''}</div></td>
       <td class="r"><span class="num price-cell">${fmtEur(o.effective_total ?? o.total)}</span>
         <div class="hint">${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}</div></td>
     </tr>`)}</tbody></table>
@@ -400,7 +477,7 @@ function analysisDetails(a) {
 }
 
 // ---------- Schnellcheck ----------
-async function viewCheck() {
+async function viewCheck(params = new URLSearchParams()) {
   loading();
   const { data: checks } = await sb.from('kb_quick_checks').select('*').order('created_at', { ascending: false }).limit(15);
   const verdict = { great: ['top', 'Sehr guter Preis'], good: ['good', 'Guter Preis'], ok: ['wait', 'Geht so'], bad: ['warn', 'Kein Deal'], unknown: ['wait', 'Unklar'] };
@@ -408,7 +485,7 @@ async function viewCheck() {
     <form id="f" class="panel">
       <div class="field"><label for="in">Angebot</label><textarea id="in" required placeholder="https://… oder: LG OLED77G6 für 2.399 €"></textarea></div>
       <button class="btn" type="submit">Prüfen</button>
-      <p class="hint" style="margin-top:8px">Die Prüfung läuft beim nächsten Durchlauf (spätestens in einer Stunde) und meldet sich per Push.</p>
+      <p class="hint" style="margin-top:8px">Das Ergebnis erscheint hier und kommt als Push-Nachricht, meist nach wenigen Minuten.</p>
     </form>
     ${checks?.length ? html`<div class="group-title">Bisherige Checks</div><div class="rows">${checks.map((c) => html`<div class="row" style="cursor:default">
       <div class="name">${c.product_name ?? c.input.slice(0, 80)}</div>
@@ -416,11 +493,17 @@ async function viewCheck() {
       <div class="meta">${c.summary ?? 'Wird geprüft …'} ${c.details?.compareUrl ? html`<a href="${safeUrl(c.details.compareUrl)}" target="_blank" rel="noopener">Vergleich</a>` : ''}</div>
       ${c.status === 'done' && !c.product_id ? html`<div style="grid-column:1/-1;margin-top:6px"><button class="btn small ghost" data-add="${c.id}">Auf die Wunschliste</button></div>` : ''}
     </div>`)}</div>` : ''}`);
-  document.getElementById('f').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const { error } = await sb.from('kb_quick_checks').insert({ input: document.getElementById('in').value.trim() });
-    toast(error ? error.message : 'Wird geprüft'); if (!error) route();
-  });
+  const pre = [params.get('u'), params.get('t')].filter(Boolean).join(' ').trim();
+  if (pre) document.getElementById('in').value = pre;
+  const submit = async () => {
+    const input = document.getElementById('in').value.trim();
+    if (!input) return;
+    const { error } = await sb.from('kb_quick_checks').insert({ input });
+    toast(error ? error.message : 'Wird geprüft');
+    if (!error) { history.replaceState(null, '', '#/check'); route(); }
+  };
+  document.getElementById('f').addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+  if (pre && params.get('auto') === '1') submit();
   view.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', async () => {
     const c = checks.find((x) => x.id === b.dataset.add);
     const { data, error } = await sb.from('kb_products').insert({ name: c.product_name ?? c.input.slice(0, 120) }).select('id').single();
@@ -500,6 +583,17 @@ async function viewSettings() {
         <div class="field"><label for="vu">Gültig bis <span class="muted">(optional)</span></label><input id="vu" type="date"></div>
         <button class="btn small" type="submit">Hinzufügen</button>
       </form></details>
+  </section>
+  <section class="panel flat"><h2>Angebote aus anderen Apps prüfen</h2>
+    <p>Mit einem iPhone-Kurzbefehl erscheint „Ist das ein Deal?“ im <strong>Teilen</strong>-Menü von Safari, Amazon & Co.:</p>
+    <ol class="prose" style="padding-left:20px">
+      <li>App <strong>Kurzbefehle</strong> öffnen → <strong>+</strong> → oben auf den Namen tippen: „Ist das ein Deal?“.</li>
+      <li>Unten auf <strong>i</strong> (Details) → <strong>Im Share-Sheet anzeigen</strong> einschalten.</li>
+      <li>Aktion <strong>Text codieren</strong> hinzufügen (Modus: URL), Eingabe: <em>Kurzbefehleingabe</em>.</li>
+      <li>Aktion <strong>URL</strong> hinzufügen mit:<br><code style="word-break:break-all">${location.origin + location.pathname}#/check?auto=1&amp;u=</code> und dahinter die Variable <em>Codierter Text</em>.</li>
+      <li>Aktion <strong>URLs öffnen</strong> hinzufügen. Fertig.</li>
+    </ol>
+    <p class="hint">Der Link öffnet sich in Safari. Melde dich dort einmal mit demselben Konto an.</p>
   </section>
   <section class="panel flat"><h2>Quellen</h2>
     <p class="hint" style="margin-top:-6px">Letzter Durchlauf: ${ago(rR.data?.[0]?.finished_at ?? rR.data?.[0]?.started_at)}. Amazon, MediaMarkt, Geizhals und weitere Shops kommen dazu, sobald der Heim-Server (Raspberry Pi) läuft.</p>
