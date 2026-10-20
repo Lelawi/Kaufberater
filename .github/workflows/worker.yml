@@ -1,6 +1,8 @@
 name: worker
-# Regelmäßige Preisabfrage. Private Repos haben 2.000 Freiminuten/Monat → stündlich tagsüber, nachts seltener.
-# Sobald der Raspberry Pi läuft, übernimmt er (alle 10 Minuten, alle Shops) und dieser Ablauf dient als Reserve.
+# Preisabfrage + Tiefenanalyse.
+# - Läuft stündlich (private Repos: 2.000 Freiminuten/Monat) und SOFORT, wenn in der App etwas eingetragen wird
+#   (die Datenbank stößt diesen Ablauf dann über die GitHub-Schnittstelle an).
+# - Die Tiefenanalyse läuft als geplante Claude-Aufgabe (nicht hier).
 on:
   schedule:
     - cron: '7 4-21 * * *'     # stündlich 06:07–23:07 Uhr (Sommerzeit)
@@ -8,16 +10,19 @@ on:
   workflow_dispatch:
     inputs:
       arg:
-        description: 'all | checks | deals | discovery | product:<id>'
+        description: 'all | checks | deals | discovery | quick | product:<id>'
         required: false
         default: all
 concurrency:
-  group: worker
+  group: worker-${{ startsWith(inputs.arg, 'product:') && inputs.arg || 'main' }}
   cancel-in-progress: false
 jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      KB_DB_PASSWORD: ${{ secrets.KB_DB_PASSWORD }}
+      ARG: ${{ inputs.arg || 'all' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,11 +32,9 @@ jobs:
       - name: Pausieren, wenn der Heim-Rechner aktiv ist
         id: home
         run: node worker/src/cli.ts homecheck
-        env: { KB_DB_PASSWORD: '${{ secrets.KB_DB_PASSWORD }}' }
-      - name: Durchlauf
+      - name: Preise abfragen
         if: steps.home.outputs.skip != 'true' || github.event_name == 'workflow_dispatch'
-        run: node worker/src/cli.ts run "${{ inputs.arg || 'all' }}"
+        run: node worker/src/cli.ts run "$ARG"
         env:
-          KB_DB_PASSWORD: ${{ secrets.KB_DB_PASSWORD }}
           KB_RUNNER: github
           KB_BUDGET_MINUTES: '8'

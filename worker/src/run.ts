@@ -9,7 +9,7 @@ import { runQuickChecks } from './jobs/quickcheck.ts';
 import { cleanup } from './jobs/cleanup.ts';
 import { stats as httpStats } from './util/http.ts';
 
-/** arg: "all" (Standard), "checks", "deals", "discovery", "product:<uuid>" */
+/** arg: "all" (Standard), "checks", "deals", "discovery", "quick", "product:<uuid>" */
 export async function runAll(arg = '') {
   const sql = await db();
   const budgetMin = Number(process.env.KB_BUDGET_MINUTES ?? 12);
@@ -31,6 +31,7 @@ export async function runAll(arg = '') {
     const lastDeals = await sql`select max(started_at) as t from kb_runs where kind like 'run:%' and stats ? 'deals' and finished_at is not null`;
     const dealsDue = !lastDeals[0]?.t || Date.now() - new Date(lastDeals[0].t).getTime() > 28 * 60_000;
     if (mode === 'deals' || mode === 'product' || (mode === 'all' && dealsDue)) await step('deals', () => runDeals(deadline, { productId }));
+    if (mode === 'quick') { await step('quickchecks', () => runQuickChecks(deadline)); await step('alerts', () => deliverAlerts()); return; }
     await step('quickchecks', () => runQuickChecks(deadline));
     await step('evaluate', () => runEvaluate({ productId }));
     await step('alerts', () => deliverAlerts());
