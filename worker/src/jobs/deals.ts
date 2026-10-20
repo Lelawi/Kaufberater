@@ -48,10 +48,10 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
         // Melden: neu, aktiv, jünger als 3 Tage, Lieferung nach DE möglich, und Preis interessant
         const fresh = d.postedAt && Date.now() - new Date(d.postedAt).getTime() < 3 * 86400_000;
         if (isNew && fresh && !d.expired && !d.foreign) {
-          const ref = p.threshold_good ?? p.max_price ?? p.best_price;
+          const ref = Math.max(p.threshold_good ?? 0, p.max_price ?? 0) || p.best_price;
           const interesting = !d.price || !ref || d.price <= ref * 1.02;
           if (interesting) {
-            const level = d.price && p.threshold_instant && d.price <= p.threshold_instant ? 'instant'
+            const level = d.price && ((p.threshold_instant && d.price <= p.threshold_instant) || (p.max_price && d.price <= p.max_price)) ? 'instant'
               : d.price && p.threshold_top && d.price <= p.threshold_top ? 'top' : 'good';
             stats.alerts += await createAlert({
               userId: p.user_id, productId: p.id, kind: 'deal', level,

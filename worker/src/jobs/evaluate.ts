@@ -105,6 +105,20 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       });
     }
 
+    // 4b) Eigener Wunschpreis (Höchstpreis) erreicht – unabhängig von den Schwellen
+    if (p.max_price) {
+      for (const cand of [best, bestR].filter(Boolean) as typeof enriched) {
+        if (cand.eff > p.max_price) continue;
+        const isRefurb = cand.o.condition !== 'new';
+        stats.alerts += await createAlert({
+          userId: p.user_id, productId: p.id, kind: 'threshold', level: 'instant',
+          title: `Dein Wunschpreis ist erreicht: ${p.name}${isRefurb ? ' (Refurbished)' : ''} für ${fmtEur(cand.eff)}`,
+          body: `Bei ${cand.o.shop}${cand.o.country !== 'DE' ? ` (${cand.o.country})` : ''}. Dein Höchstpreis: ${fmtEur(p.max_price)}.` + (cand.notes ? ` Effektiv nach ${cand.notes}.` : ''),
+          url: cand.o.url, dedupKey: `max:${p.id}:${isRefurb ? 'r' : 'n'}:${Math.floor(cand.eff / 10)}`,
+        });
+      }
+    }
+
     // 5) Ohne Schwellen (noch keine Analyse): neuer Tiefstpreis deutlich unter bisherigem Minimum
     if (best && p.threshold_good === null && p.max_price === null && prevLowest && best.eff < prevLowest * 0.95) {
       stats.alerts += await createAlert({

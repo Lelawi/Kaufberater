@@ -316,6 +316,7 @@ async function viewProduct(id) {
       : p.threshold_source === 'auto' ? 'Vorläufig aus den gefundenen Preisen und früheren Deals berechnet. Die Tiefenanalyse verfeinert sie am nächsten Morgen. Wenn du sie änderst, gelten deine Werte.'
       : p.threshold_good ? 'Von der Tiefenanalyse festgelegt. Wenn du sie änderst, gelten deine Werte.'
       : 'Werden nach der ersten Preissuche automatisch gesetzt.'}</p>
+    ${p.max_price ? html`<p class="hint">Dein Höchstpreis: <strong>${fmtEur(p.max_price)}</strong> – sobald ein Angebot darunter liegt, kommt sofort eine Meldung.</p>` : ''}
     <div class="btn-row"><button class="btn small" id="saveThr">Schwellen speichern</button>${p.thresholds_manual ? html`<button class="btn small ghost" id="autoThr">Wieder der Analyse überlassen</button>` : ''}</div>
   </section>
 
