@@ -3,18 +3,24 @@ on:
   workflow_dispatch:
     inputs:
       cmd:
-        description: Befehl
+        description: Befehl (explore, adapter, deals, run)
         required: true
-        default: dbtest
+        default: explore
+      arg:
+        description: Argument
+        required: false
+        default: ''
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: npm install --no-audit --no-fund
-      - run: node worker/src/${{ inputs.cmd }}.ts
+      - run: if [ "$CMD" = dbtest ]; then node worker/src/dbtest.ts; else node worker/src/cli.ts "$CMD" "$ARG"; fi
         env:
+          CMD: ${{ inputs.cmd }}
+          ARG: ${{ inputs.arg }}
           KB_DB_PASSWORD: ${{ secrets.KB_DB_PASSWORD }}
