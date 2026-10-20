@@ -244,7 +244,7 @@ async function viewProduct(id) {
     <form id="thr" class="grid-2" style="grid-template-columns:repeat(3,1fr)">
       <div class="field"><label for="tg">Guter Preis</label><input id="tg" type="number" step="1" inputmode="decimal" value="${p.threshold_good ?? ''}"></div>
       <div class="field"><label for="tt">Top-Preis</label><input id="tt" type="number" step="1" inputmode="decimal" value="${p.threshold_top ?? ''}"></div>
-      <div class="field"><label for="ti">Sofort zuschlagen</label><input id="ti" type="number" step="1" inputmode="decimal" value="${p.threshold_instant ?? ''}"></div>
+      <div class="field"><label for="ti">Sofort kaufen</label><input id="ti" type="number" step="1" inputmode="decimal" value="${p.threshold_instant ?? ''}"></div>
     </form>
     <p class="hint">${p.thresholds_manual ? 'Von dir festgelegt – die Analyse ändert sie nicht mehr.' : 'Von der Analyse vorgeschlagen. Wenn du sie änderst, gelten deine Werte.'}</p>
     <div class="btn-row"><button class="btn small" id="saveThr">Schwellen speichern</button>${p.thresholds_manual ? html`<button class="btn small ghost" id="autoThr">Wieder der Analyse überlassen</button>` : ''}</div>
@@ -344,14 +344,14 @@ function sourceLabel(l) {
 
 function offerTable(list, showCondition = false) {
   const condText = { refurbished: 'Refurbished', bware: 'B-Ware', used: 'Gebraucht', new: 'Neu' };
-  return html`<div class="scroll-x"><table class="table">
-    <thead><tr><th>Händler</th><th class="r">Preis inkl. Versand</th><th class="r">Für dich</th></tr></thead>
+  return html`<table class="table offers">
+    <thead><tr><th>Händler</th><th class="r">Endpreis</th></tr></thead>
     <tbody>${list.slice(0, 25).map((o, i) => html`<tr class="${i === 0 ? 'best' : ''}">
       <td><a class="shop" href="${safeUrl(o.url)}" target="_blank" rel="noopener">${o.shop}</a>${o.country && o.country !== 'DE' ? html` <span class="muted">(${o.country})</span>` : ''}
-        <div class="hint">${showCondition ? condText[o.condition] + ' · ' : ''}${o.delivery_text ?? ''}${o.title ? html`<br>${o.title.slice(0, 90)}` : ''}</div></td>
-      <td class="r num">${fmtEur(o.total)}${o.shipping ? html`<div class="hint">davon ${fmtEur(o.shipping)} Versand</div>` : ''}</td>
-      <td class="r num"><strong>${fmtEur(o.effective_total ?? o.total)}</strong>${o.effective_notes ? html`<div class="hint">${o.effective_notes}</div>` : ''}</td>
-    </tr>`)}</tbody></table></div>
+        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}</div></td>
+      <td class="r"><span class="num price-cell">${fmtEur(o.effective_total ?? o.total)}</span>
+        <div class="hint">${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}</div></td>
+    </tr>`)}</tbody></table>
     ${list.length > 25 ? html`<p class="hint">${list.length - 25} weitere, teurere Angebote ausgeblendet.</p>` : ''}`;
 }
 

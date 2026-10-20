@@ -1,5 +1,6 @@
 // Gemeinsame Bausteine: Datenbank-Verbindung, Formatierung, sicheres HTML
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+// Supabase-Bibliothek liegt lokal unter vendor/ (wird in index.html geladen)
+const { createClient } = window.supabase;
 
 export const SUPABASE_URL = 'https://obxwqvmmirmbfktjvhxf.supabase.co';
 // Öffentlicher Schlüssel (darf im Code stehen; Zugriff regelt die Datenbank pro Benutzer)

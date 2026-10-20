@@ -2,6 +2,13 @@
    Leitidee: das Preisschild aus dem Elektromarkt. Preise in schmaler Schrift wie auf Regaletiketten,
    und eine "Preisleiter", die zeigt, wo der aktuelle Preis zwischen den Kaufschwellen steht. */
 
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/barlow-400.woff2") format("woff2"); }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/barlow-500.woff2") format("woff2"); }
+@font-face { font-family: "Barlow"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/barlow-600.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/barlow-sc-500.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 600; font-display: swap; src: url("fonts/barlow-sc-600.woff2") format("woff2"); }
+@font-face { font-family: "Barlow Semi Condensed"; font-style: normal; font-weight: 700; font-display: swap; src: url("fonts/barlow-sc-700.woff2") format("woff2"); }
+
 :root {
   --bg: #EEF1F5;
   --surface: #FFFFFF;
@@ -51,6 +58,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 main { max-width: 760px; margin: 0 auto; padding: 16px 16px 32px; outline: none; }
+main:focus, main:focus-visible { outline: none; }
 a { color: inherit; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
 h1, h2, h3 { margin: 0; line-height: 1.2; }
@@ -92,7 +100,7 @@ input[type=text], input[type=url], input[type=email], input[type=password], inpu
 }
 textarea { min-height: 88px; resize: vertical; }
 input:focus, select:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: -1px; border-color: transparent; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
 .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; cursor: pointer; }
 .check input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--ink); flex: none; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--surface); }
@@ -165,6 +173,8 @@ details.more > summary { cursor: pointer; color: var(--ink-2); font-weight: 500;
 .table .shop { font-weight: 500; }
 .table .best td { background: color-mix(in srgb, var(--good) 8%, transparent); }
 .scroll-x { overflow-x: auto; margin: 0 -16px; padding: 0 16px; }
+.table.offers td.r { width: 42%; }
+.table .price-cell { font-weight: 700; font-size: 17px; white-space: nowrap; }
 
 /* Diagramm */
 .chart svg { display: block; width: 100%; height: auto; }

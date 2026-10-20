@@ -45,7 +45,8 @@ export function priceChart(series, p, analysisHistory = []) {
   const all = [...pts.flatMap((x) => [x.n, x.r, x.deal]), ...hist.map((h) => h.v), p.threshold_good, p.threshold_top, p.threshold_instant].filter((v) => v);
   const dates = [...pts.map((x) => x.d), ...hist.map((h) => h.d)];
   if (dates.length < 2 || all.length < 2) return '<p class="muted">Noch zu wenig Daten für einen Verlauf. Nach ein paar Tagen Beobachtung erscheint hier die Kurve.</p>';
-  const W = 640; const H = 240; const L = 52; const R = 12; const T = 12; const B = 28;
+  // Breite an den Bildschirm anpassen, damit Beschriftungen auf dem Handy lesbar bleiben
+  const W = Math.max(300, Math.min(700, (document.getElementById('view')?.clientWidth ?? 640) - 64)); const H = Math.round(Math.max(190, Math.min(260, W * 0.55))); const L = 50; const R = 8; const T = 14; const B = 26;
   const minD = Math.min(...dates.map(Number)); const maxD = Math.max(...dates.map(Number), Date.now());
   let lo = Math.min(...all); let hi = Math.max(...all);
   const span = hi - lo || hi * 0.1; lo -= span * 0.08; hi += span * 0.08;
@@ -60,12 +61,12 @@ export function priceChart(series, p, analysisHistory = []) {
     return d;
   };
   // Achsen: 4 Preislinien, Monatsbeschriftung
-  const ticks = niceTicks(lo, hi, 4);
+  const ticks = niceTicks(lo, hi, 6);
   const grid = ticks.map((v) => `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}"/>`).join('');
   const ylab = ticks.map((v) => `<text x="${L - 6}" y="${Y(v) + 4}" text-anchor="end">${esc(fmtEur0(v))}</text>`).join('');
   const months = monthTicks(minD, maxD).map((d) => `<text x="${X(d)}" y="${H - 8}" text-anchor="middle">${esc(d.toLocaleDateString('de-DE', { month: 'short', year: maxD - minD > 300 * 864e5 ? '2-digit' : undefined }))}</text>`).join('');
   const thr = [['threshold_instant', 'Sofort', 'var(--tag)'], ['threshold_top', 'Top', 'var(--top)'], ['threshold_good', 'Gut', 'var(--good)']]
-    .filter(([k]) => p[k]).map(([k, label, c]) => `<line x1="${L}" x2="${W - R}" y1="${Y(p[k])}" y2="${Y(p[k])}" stroke="${c}" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${W - R}" y="${Y(p[k]) - 4}" text-anchor="end" style="font:600 11px var(--font-num);fill:var(--ink-2)">${label} ${esc(fmtEur0(p[k]))}</text>`).join('');
+    .filter(([k]) => p[k]).map(([k, label, c]) => `<line x1="${L}" x2="${W - R}" y1="${Y(p[k])}" y2="${Y(p[k])}" stroke="${c}" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${L + 4}" y="${Y(p[k]) - 4}" text-anchor="start" style="font:600 11px var(--font-num);fill:var(--ink-2);paint-order:stroke;stroke:var(--surface);stroke-width:3px">${label} ${esc(fmtEur0(p[k]))}</text>`).join('');
   const deals = pts.filter((x) => x.deal).map((x) => `<circle cx="${X(x.d)}" cy="${Y(x.deal)}" r="4.5" fill="var(--s-deal)" stroke="var(--surface)" stroke-width="2"><title>${esc(`Deal ${fmtDate(x.d)}: ${fmtEur(x.deal)}`)}</title></circle>`).join('');
   const histDots = hist.map((h) => `<rect x="${X(h.d) - 4}" y="${Y(h.v) - 4}" width="8" height="8" rx="1.5" fill="none" stroke="var(--ink-3)" stroke-width="1.8"><title>${esc(`${fmtDate(h.d)}: ${fmtEur(h.v)} ${h.note}`)}</title></rect>`).join('');
   const hasRefurb = pts.some((x) => x.r !== null);

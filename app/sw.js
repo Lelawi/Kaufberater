@@ -1,6 +1,7 @@
 // Service Worker: Push-Nachrichten empfangen und die App-Hülle für schnellen Start zwischenspeichern
-const CACHE = 'kb-v1';
-const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'lib.js', 'chart.js', 'manifest.webmanifest', 'icons/icon-192.png'];
+const CACHE = 'kb-v2';
+const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'lib.js', 'chart.js', 'manifest.webmanifest', 'icons/icon-192.png', 'vendor/supabase.js',
+  'fonts/barlow-400.woff2', 'fonts/barlow-500.woff2', 'fonts/barlow-600.woff2', 'fonts/barlow-sc-500.woff2', 'fonts/barlow-sc-600.woff2', 'fonts/barlow-sc-700.woff2'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

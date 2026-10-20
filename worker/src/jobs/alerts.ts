@@ -43,7 +43,7 @@ function inQuietHours(from: string | null, to: string | null): boolean {
   return f < t ? now >= f && now < t : now >= f || now < t;
 }
 
-const APP_URL = 'https://lelawi.github.io/kaufberater-app/';
+const APP_URL = 'https://lelawi.github.io/Kaufberater-app/';
 
 export async function deliverAlerts() {
   const sql = await db();
