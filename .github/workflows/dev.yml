@@ -3,13 +3,15 @@ on:
   workflow_dispatch:
     inputs:
       cmd:
-        description: Befehl (explore, browse, adapter, deals, run)
+        description: Befehl (explore, browse, adapter, deals, run, deps)
         required: true
         default: explore
       arg:
         description: Argument
         required: false
         default: ''
+permissions:
+  contents: write
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -22,8 +24,22 @@ jobs:
       - name: Browser installieren
         if: inputs.cmd == 'browse' || inputs.cmd == 'adapter' || inputs.cmd == 'run'
         run: npx playwright install chromium --with-deps --only-shell
-      - run: node worker/src/cli.ts "$CMD" "$ARG"
+      - name: Ausführen
+        if: inputs.cmd != 'deps'
+        run: node worker/src/cli.ts "$CMD" "$ARG"
         env:
           CMD: ${{ inputs.cmd }}
           ARG: ${{ inputs.arg }}
           KB_DB_PASSWORD: ${{ secrets.KB_DB_PASSWORD }}
+      - name: Abhängigkeiten für Entwicklung bereitstellen
+        if: inputs.cmd == 'deps'
+        run: mkdir -p dumps && tar czf dumps/node_modules.tgz node_modules
+      - name: Rohdaten in Branch 'dumps' schieben
+        if: always()
+        run: |
+          [ -d dumps ] || exit 0
+          cd dumps
+          git init -q -b dumps
+          git config user.name "kaufberater-bot"; git config user.email "bot@users.noreply.github.com"
+          git add -A && git commit -qm "dumps ${{ github.run_id }}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" dumps:dumps

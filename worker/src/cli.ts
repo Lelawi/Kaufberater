@@ -1,6 +1,16 @@
 // Einstiegspunkt: node worker/src/cli.ts <befehl> [argument]
 import { closeDb, db, debugLog } from './db.ts';
 import { fetchPage } from './util/http.ts';
+import { mkdirSync, writeFileSync } from 'node:fs';
+
+/** Rohseiten zusätzlich als Dateien ablegen (werden vom Workflow in den Branch 'dumps' geschoben) */
+let dumpNo = 0;
+function dump(tag: string, url: string, body: string, meta: unknown) {
+  mkdirSync(`dumps/${tag}`, { recursive: true });
+  const name = String(++dumpNo).padStart(3, '0') + '_' + url.replace(/^https?:\/\//, '').replace(/[^a-zA-Z0-9.]+/g, '_').slice(0, 80);
+  writeFileSync(`dumps/${tag}/${name}.html`, body);
+  writeFileSync(`dumps/${tag}/${name}.json`, JSON.stringify({ url, ...(meta as object) }, null, 1));
+}
 
 const [cmd = 'run', arg = ''] = process.argv.slice(2);
 
@@ -22,7 +32,8 @@ async function explore(arg: string) {
       const p = await fetchPage(r.url, { country: r.country, headers: r.headers, method: r.method, body: r.body, json: r.json, retries: 0, allowStatus: [400, 401, 403, 404, 410, 429, 500, 503] });
       const hdr: Record<string, string> = {};
       p.headers.forEach((v, k) => { hdr[k] = v; });
-      await debugLog(tag, { url: r.url, status: p.status, finalUrl: p.url, headers: hdr, body: p.text });
+      dump(tag, r.url, p.text, { status: p.status, finalUrl: p.url, headers: hdr });
+      await debugLog(tag, { url: r.url, status: p.status, finalUrl: p.url, headers: hdr, body: p.text.slice(0, 200_000) });
       console.log('OK', p.status, r.url, p.text.length);
     } catch (e) {
       await debugLog(tag, { url: r.url, note: `FEHLER: ${(e as Error).message}` });
@@ -39,7 +50,8 @@ async function browseExplore(arg: string) {
       try {
         const country = /amazon\.(fr|it|es|nl)/.exec(url)?.[1]?.toUpperCase() ?? 'DE';
         const p = await browse(url, { country, captureRe: /api|graphql|search|offer|price/i });
-        await debugLog(tag, { url, status: p.status, finalUrl: p.url, body: p.html, headers: { captured: p.json.slice(0, 20) } });
+        dump(tag, url, p.html, { status: p.status, finalUrl: p.url, captured: p.json.slice(0, 30) });
+        await debugLog(tag, { url, status: p.status, finalUrl: p.url, body: p.html.slice(0, 200_000) });
         console.log('::notice::OK ' + p.status + ' ' + url + ' ' + p.html.length);
       } catch (e) {
         await debugLog(tag, { url, note: `FEHLER: ${(e as Error).message}` });
