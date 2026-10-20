@@ -11,13 +11,16 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
   const products = await sql<ProductRow[]>`
     select * from kb_products where status = 'watching'
       and (${opts.productId ?? null}::uuid is null or id = ${opts.productId ?? null}::uuid)
-    order by random()`;
+      and (${opts.productId ?? null}::uuid is not null or deals_checked_at is null or deals_checked_at < now() - interval '50 minutes')
+    order by deals_checked_at nulls first
+    limit ${Number(process.env.KB_DEALS_PER_RUN ?? 20)}`;
   const adapters = DEAL_SOURCES.filter((a) => !opts.portals || opts.portals.includes(a.key));
   const stats = { products: 0, found: 0, newDeals: 0, alerts: 0 };
   for (const p of products) {
     if (Date.now() > deadline) break;
     stats.products++;
     const q = toQuery(p);
+    await sql`update kb_products set deals_checked_at = now() where id = ${p.id}`;
     await Promise.all(adapters.map(async (ad) => {
       let deals;
       try { deals = await ad.search(q); await recordSourceResult(ad.key, true); }

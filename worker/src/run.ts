@@ -28,10 +28,8 @@ export async function runAll(arg = '') {
   try {
     if (['all', 'discovery', 'product'].includes(mode)) await step('discovery', () => runDiscovery(deadline, productId));
     if (['all', 'checks', 'product'].includes(mode)) await step('checks', () => runChecks(deadline, { productId }));
-    // Deal-Portale höchstens alle 30 Minuten (oder gezielt)
-    const lastDeals = await sql`select max(started_at) as t from kb_runs where kind like 'run:%' and stats ? 'deals' and finished_at is not null`;
-    const dealsDue = !lastDeals[0]?.t || Date.now() - new Date(lastDeals[0].t).getTime() > 28 * 60_000;
-    if (mode === 'deals' || mode === 'product' || (mode === 'all' && dealsDue)) await step('deals', () => runDeals(deadline, { productId }));
+    // Deal-Portale: jedes Produkt höchstens etwa stündlich, pro Lauf begrenzte Anzahl (schont die Portale)
+    if (['all', 'deals', 'product'].includes(mode)) await step('deals', () => runDeals(deadline, { productId }));
     if (mode === 'quick') { await step('quickchecks', () => runQuickChecks(deadline)); await step('alerts', () => deliverAlerts()); return; }
     await step('quickchecks', () => runQuickChecks(deadline));
     await step('evaluate', () => runEvaluate({ productId }));
