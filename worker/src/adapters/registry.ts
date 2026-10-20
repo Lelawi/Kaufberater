@@ -6,12 +6,14 @@ import { idealoAdapter } from './idealo.ts';
 import { billigerAdapter } from './billiger.ts';
 import { amazonAdapters } from './amazon.ts';
 import { pepperAdapters } from './pepper.ts';
+import { refurbedAdapter } from './refurbed.ts';
 
 export const SOURCES: SourceAdapter[] = [
   ...geizhalsAdapters,
   idealoAdapter,
   billigerAdapter,
   ...amazonAdapters,
+  refurbedAdapter,
   ...shopSources,
 ];
 
