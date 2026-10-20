@@ -439,15 +439,18 @@ function sourceLabel(l) {
 
 function offerTable(list, showCondition = false) {
   const condText = { refurbished: 'Refurbished', bware: 'B-Ware', used: 'Gebraucht', new: 'Neu' };
-  return html`<table class="table offers">
-    <thead><tr><th>Händler</th><th class="r">Endpreis</th></tr></thead>
-    <tbody>${list.slice(0, 25).map((o, i) => html`<tr class="${i === 0 ? 'best' : ''}">
+  const via = (o) => [...(o.via ?? [o.source])].map((v) => ({ idealo: 'idealo', billiger: 'billiger.de', geizhals: 'Geizhals' }[v] ?? v)).join(', ');
+  const rowHtml = (o, i) => html`<tr class="${i === 0 ? 'best' : ''}">
       <td><a class="shop" href="${safeUrl(o.url)}" target="_blank" rel="noopener">${o.shop}</a>${o.country && o.country !== 'DE' ? html` <span class="muted">(${o.country})</span>` : ''}
-        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${o.source && o.source !== 'shop' ? html`<br>über ${[...(o.via ?? [o.source])].map((v) => ({ idealo: 'idealo', billiger: 'billiger.de', geizhals: 'Geizhals' }[v] ?? v)).join(', ')}` : ''}</div></td>
+        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${o.source && o.source !== 'shop' ? html`<br>über ${via(o)}` : ''}</div></td>
       <td class="r"><span class="num price-cell">${fmtEur(o.effective_total ?? o.total)}</span>
         <div class="hint">${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}</div></td>
-    </tr>`)}</tbody></table>
-    ${list.length > 25 ? html`<p class="hint">${list.length - 25} weitere, teurere Angebote ausgeblendet.</p>` : ''}`;
+    </tr>`;
+  const SHOW = 8;
+  const head = html`<thead><tr><th>Händler</th><th class="r">Endpreis</th></tr></thead>`;
+  return html`<table class="table offers">${head}<tbody>${list.slice(0, SHOW).map(rowHtml)}</tbody></table>
+    ${list.length > SHOW ? html`<details class="more"><summary>Alle ${list.length} Angebote zeigen</summary>
+      <table class="table offers"><tbody>${list.slice(SHOW, 60).map((o, i) => rowHtml(o, i + SHOW))}</tbody></table></details>` : ''}`;
 }
 
 function dealList(deals) {
