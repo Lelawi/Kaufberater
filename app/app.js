@@ -111,7 +111,8 @@ async function viewList() {
   const paused = products.filter((p) => p.status === 'paused');
   const bought = products.filter((p) => p.status === 'bought');
   const group = (title, list, hint) => list.length ? html`<div class="group-title">${title} <span class="count">${list.length}</span></div>${hint ? html`<p class="hint" style="margin:-4px 0 8px">${hint}</p>` : ''}<div class="rows">${list.map(row)}</div>` : '';
-  render(html`<div class="head"><div><h1>Wunschliste</h1><div class="sub">${watching.length} beobachtet</div></div><a class="btn" href="#/add">Eintragen</a></div>
+  const lastCheck = watching.map((p) => p.last_checked_at).filter(Boolean).sort().pop();
+  render(html`<div class="head"><div><h1>Wunschliste</h1><div class="sub">${watching.length} beobachtet${lastCheck ? html` · Preise ${ago(lastCheck)}` : ''}</div></div><a class="btn" href="#/add">Eintragen</a></div>
     ${group('Jetzt interessant', hot)}
     ${group('Beobachten', rest)}
     ${group('Gekauft – Preisschutz aktiv', bought, 'Wird bis zum Ende der Rückgabefrist weiter beobachtet.')}
@@ -249,6 +250,12 @@ async function viewEdit(id, params = new URLSearchParams()) {
       if (changedSearch) Object.assign(row, { discovery_status: 'pending', analysis_status: 'queued', analysis_due_at: new Date().toISOString() });
       res = await sb.from('kb_products').update(row).eq('id', id).select('id').single();
     } else {
+      // Schon auf der Liste? (gleiche Modellnummer oder sehr ähnlicher Name)
+      const key = (x) => String(x ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const { data: existing } = await sb.from('kb_products').select('id,name,model,status').neq('status', 'archived');
+      const dupe = (existing ?? []).find((x) => (row.model && key(x.model) && (key(x.model).includes(key(row.model)) || key(row.model).includes(key(x.model))))
+        || key(x.name) === key(row.name));
+      if (dupe && !confirm(`„${dupe.name}“ steht schon auf deiner Liste. Trotzdem noch einmal eintragen?`)) { btn.disabled = false; location.hash = '#/p/' + dupe.id; return; }
       res = await sb.from('kb_products').insert(row).select('id').single();
     }
     if (res.error) { btn.disabled = false; return toast(res.error.message); }
@@ -547,11 +554,13 @@ async function viewSettings() {
   ]);
   const s = setR.data ?? { push_alerts: true, email_alerts: false, alert_email: session.user.email, return_days: 14 };
   const pushState = await currentPushState();
+  const { data: setup } = await sb.rpc('kb_setup_status');
   const kindText = { voucher: 'Gutschein', membership: 'Mitgliedschaft', cashback: 'Cashback-Konto', payment: 'Zahlungsart' };
   const isIOS = /iPhone|iPad/.test(navigator.userAgent);
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   render(html`<div class="head"><h1>Einstellungen</h1></div>
-  <section class="panel"><h2>Push-Nachrichten</h2>
+  ${setupPanel(setup, pushState)}
+  <section class="panel" id="push"><h2>Push-Nachrichten</h2>
     ${isIOS && !standalone ? html`<p>Auf dem iPhone funktionieren Push-Nachrichten nur, wenn die App auf dem Home-Bildschirm liegt: In Safari unten auf <strong>Teilen</strong> tippen, dann <strong>Zum Home-Bildschirm</strong>. Danach die App von dort öffnen und hier einschalten.</p>`
       : pushState === 'unsupported' ? html`<p class="muted">Dieser Browser unterstützt keine Push-Nachrichten.</p>`
       : pushState === 'on' ? html`<p>Auf diesem Gerät eingeschaltet.</p><div class="btn-row"><button class="btn small ghost" id="pushTest">Testnachricht anfordern</button><button class="btn small ghost" id="pushOff">Ausschalten</button></div>`
@@ -559,8 +568,9 @@ async function viewSettings() {
       : html`<p>Erhalte eine Nachricht, sobald ein Preis eine Schwelle erreicht.</p><button class="btn" id="pushOn">Push-Nachrichten einschalten</button>`}
   </section>
   <form id="sf" class="panel"><h2>Benachrichtigungen</h2>
-    <div class="field"><label class="check"><input id="em" type="checkbox" ${s.email_alerts ? 'checked' : ''}> Wichtige Meldungen (Top-Preis, Sofort zuschlagen, Fristen) zusätzlich per E-Mail</label></div>
-    <div class="field"><label for="ea">E-Mail-Adresse</label><input id="ea" type="email" value="${s.alert_email ?? session.user.email ?? ''}"></div>
+    ${setup?.email_ready ? html`<div class="field"><label class="check"><input id="em" type="checkbox" ${s.email_alerts ? 'checked' : ''}> Wichtige Meldungen (Top-Preis, Sofort zuschlagen, Fristen) zusätzlich per E-Mail</label></div>
+    <div class="field"><label for="ea">E-Mail-Adresse</label><input id="ea" type="email" value="${s.alert_email ?? session.user.email ?? ''}"></div>`
+      : html`<input id="em" type="checkbox" hidden><input id="ea" type="hidden" value="${s.alert_email ?? ''}">`}
     <div class="field"><label>Ruhezeit <span class="muted">(keine Push-Nachrichten, außer „Sofort zuschlagen“)</span></label>
       <div class="grid-2"><input id="qf" type="time" value="${(s.quiet_from ?? '').slice(0, 5)}" aria-label="Ruhezeit von"><input id="qt" type="time" value="${(s.quiet_to ?? '').slice(0, 5)}" aria-label="Ruhezeit bis"></div></div>
     <button class="btn small" type="submit">Speichern</button>
@@ -605,6 +615,15 @@ async function viewSettings() {
   </section>
   <section class="panel flat"><div class="btn-row"><button class="btn ghost" id="logout">Abmelden</button></div></section>`);
 
+  document.getElementById('tokForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button'); btn.disabled = true;
+    const { error } = await sb.rpc('kb_set_github_token', { p_token: document.getElementById('tok').value });
+    btn.disabled = false;
+    if (error) return toast(error.message);
+    toast('Gespeichert – Testlauf gestartet');
+    setTimeout(route, 4000);
+  });
   document.getElementById('sf').addEventListener('submit', async (e) => {
     e.preventDefault();
     const row = { user_id: session.user.id, email_alerts: document.getElementById('em').checked, alert_email: document.getElementById('ea').value || null,
@@ -627,6 +646,38 @@ async function viewSettings() {
     const { error } = await sb.from('kb_alerts').insert({ user_id: session.user.id, kind: 'system', level: 'good', title: 'Testnachricht vom Kaufberater', body: 'Push-Nachrichten funktionieren. So sieht eine Meldung aus.', dedup_key: 'test:' + Date.now() });
     toast(error ? error.message : 'Kommt beim nächsten Durchlauf (spätestens in einer Stunde)');
   });
+}
+
+// ---------- Einrichtung ----------
+function setupPanel(st, pushState) {
+  if (!st) return '';
+  const pushOk = pushState === 'on';
+  const code = st.last_dispatch_status;
+  const keyState = !st.github_key ? 'missing' : code === 204 ? 'ok' : code === 401 ? 'invalid' : (code === 403 || code === 404) ? 'rights' : 'unknown';
+  const item = (ok, title, text) => html`<li style="align-items:flex-start"><span><strong>${ok ? '✓' : '○'} ${title}</strong><div class="hint">${text}</div></span></li>`;
+  const allOk = pushOk && keyState === 'ok';
+  return html`<section class="panel ${allOk ? 'flat' : ''}"><h2>${allOk ? 'Alles eingerichtet' : 'Einrichtung'}</h2>
+    <ul class="list-plain">
+      ${item(pushOk, 'Push-Nachrichten', pushOk ? 'Auf diesem Gerät eingeschaltet.' : html`Noch aus – <a href="#/settings" onclick="document.getElementById('push').scrollIntoView({behavior:'smooth'});return false">unten einschalten</a>.`)}
+      ${item(keyState === 'ok', 'Sofort-Start',
+        keyState === 'ok' ? 'Neue Einträge werden sofort gesucht, die Preisabfrage läuft zuverlässig stündlich.'
+        : keyState === 'invalid' ? 'Der GitHub-Schlüssel wird abgelehnt (abgelaufen oder falsch kopiert). Bitte unten einen neuen eintragen.'
+        : keyState === 'rights' ? 'Der GitHub-Schlüssel hat nicht die nötige Berechtigung („Actions: Read and write“ für das Repo Kaufberater).'
+        : keyState === 'unknown' ? 'Schlüssel ist hinterlegt, der erste Test läuft noch.'
+        : 'Ohne GitHub-Schlüssel startet die Preisabfrage nur, wenn GitHub Zeit hat – oft nur alle paar Stunden.')}
+      ${item(st.runs_24h >= 12, 'Preisabfrage', html`Zuletzt ${ago(st.last_run_at)} · ${st.runs_24h} Durchläufe in 24 Std.${st.home_active ? ' · Heim-Server aktiv' : ''}`)}
+    </ul>
+    ${keyState !== 'ok' && keyState !== 'unknown' ? html`<details class="more" ${keyState !== 'missing' ? 'open' : ''}><summary>GitHub-Schlüssel eintragen</summary>
+      <ol class="prose" style="padding-left:20px">
+        <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com/settings/personal-access-tokens/new</a> öffnen.</li>
+        <li>Name: <em>Kaufberater</em>, Ablauf: 1 Jahr. Bei <strong>Repository access</strong>: <em>Only select repositories</em> → <em>Kaufberater</em>.</li>
+        <li>Bei <strong>Permissions</strong> → <em>Repository permissions</em> → <strong>Actions: Read and write</strong>.</li>
+        <li><strong>Generate token</strong>, den Schlüssel kopieren und hier einfügen:</li>
+      </ol>
+      <form id="tokForm" style="display:flex;gap:8px"><input id="tok" type="password" autocomplete="off" placeholder="github_pat_…" required><button class="btn small" type="submit">Speichern</button></form>
+      <p class="hint">Der Schlüssel wird verschlüsselt in der Datenbank gespeichert und kann nur Abläufe in deinem Kaufberater-Repo starten.</p>
+    </details>` : ''}
+  </section>`;
 }
 
 // ---------- Push ----------
