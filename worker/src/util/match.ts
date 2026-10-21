@@ -141,3 +141,21 @@ export function variantCodes(p: ProductQuery, title: string): string[] {
   }
   return [...out];
 }
+
+/**
+ * Modellnummer aus freiem Text/Link-Namen raten (z. B. „Sony WH-1000XM6 Kopfhörer“ → „WH-1000XM6“, „LG OLED77G6“ → „OLED77G6“).
+ * Nur eindeutige Nummern mit Buchstaben nach den Ziffern („1000XM6“, „77G6“) – „iPhone 16“ zählt nicht, da zu allgemein.
+ */
+export function guessModel(text: string): string | null {
+  const re = /(?<![A-Za-z0-9])([A-Za-z]{0,6})([- ]?)(\d{2,}[A-Za-z][A-Za-z0-9]*|\d{4,}[A-Za-z0-9]*)(?![A-Za-z0-9])/g;
+  let m: RegExpExecArray | null; let best: string | null = null;
+  while ((m = re.exec(text))) {
+    const [full, prefix, , core] = m;
+    if (/^\d+(GB|TB|MB|HZ|W|MAH|MM|CM|ZOLL|K|P|FPS|MP)$/i.test(core)) continue;   // 256GB, 120Hz, 4K …
+    if (/^(19|20)\d{2}$/.test(core)) continue;                                        // Jahreszahl
+    const cand = prefix ? full : core;
+    if (norm(cand).length < 5) continue;
+    if (!best || norm(cand).length > norm(best).length) best = cand.replace(/ /, '-');
+  }
+  return best;
+}

@@ -575,8 +575,12 @@ async function viewCheck(params = new URLSearchParams()) {
     ${checks?.length ? html`<div class="group-title">Bisherige Checks</div><div class="rows">${checks.map((c) => html`<div class="row" style="cursor:default">
       <div class="name">${c.product_name ?? c.input.slice(0, 80)}</div>
       <div class="price">${c.price ? priceTag(c.price, 'price-mid') : ''}<div class="price-sub">${c.status === 'done' ? html`<span class="pill ${verdict[c.verdict]?.[0] ?? 'wait'}">${verdict[c.verdict]?.[1] ?? '–'}</span>` : c.status === 'failed' ? html`<span class="pill warn">Fehler</span>` : html`<span class="pill wait">wartet</span>`}</div></div>
-      <div class="meta">${c.summary ?? 'Wird geprüft …'} ${c.details?.compareUrl ? html`<a href="${safeUrl(c.details.compareUrl)}" target="_blank" rel="noopener">Vergleich</a>` : ''}</div>
-      ${c.status === 'done' && !c.product_id ? html`<div style="grid-column:1/-1;margin-top:6px"><button class="btn small ghost" data-add="${c.id}">Auf die Wunschliste</button></div>` : ''}
+      <div class="meta">${c.summary ?? 'Wird geprüft …'}
+        ${c.details?.bestUrl ? html` <a href="${safeUrl(c.details.bestUrl)}" target="_blank" rel="noopener">Günstigstes Angebot</a>` : ''}
+        ${c.details?.compareUrl ? html` · <a href="${safeUrl(c.details.compareUrl)}" target="_blank" rel="noopener">Preisvergleich</a>` : ''}
+        ${c.details?.dealLow?.url ? html` · <a href="${safeUrl(c.details.dealLow.url)}" target="_blank" rel="noopener">mydealz</a>` : ''}</div>
+      ${c.status === 'done' && (c.product_id || c.details?.watchedId) ? html`<div style="grid-column:1/-1;margin-top:6px"><a class="btn small ghost" href="#/p/${c.product_id ?? c.details.watchedId}">Zur Wunschliste</a></div>`
+        : c.status === 'done' ? html`<div style="grid-column:1/-1;margin-top:6px"><button class="btn small ghost" data-add="${c.id}">Auf die Wunschliste</button></div>` : ''}
     </div>`)}</div>` : ''}`);
   const pre = [params.get('u'), params.get('t')].filter(Boolean).join(' ').trim();
   if (pre) document.getElementById('in').value = pre;
@@ -589,9 +593,13 @@ async function viewCheck(params = new URLSearchParams()) {
   };
   document.getElementById('f').addEventListener('submit', (e) => { e.preventDefault(); submit(); });
   if (pre && params.get('auto') === '1') submit();
+  // Solange noch etwas geprüft wird: alle 15 Sekunden nachsehen
+  if (checks?.some((c) => c.status === 'queued' || c.status === 'running')) {
+    setTimeout(() => { if (location.hash.startsWith('#/check') && !document.getElementById('in').value) route(); }, 15_000);
+  }
   view.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', async () => {
     const c = checks.find((x) => x.id === b.dataset.add);
-    const { data, error } = await sb.from('kb_products').insert({ name: c.product_name ?? c.input.slice(0, 120) }).select('id').single();
+    const { data, error } = await sb.from('kb_products').insert({ name: c.product_name ?? c.input.slice(0, 120), model: c.details?.model ?? null }).select('id').single();
     if (error) return toast(error.message);
     await sb.from('kb_quick_checks').update({ product_id: data.id }).eq('id', c.id);
     if (c.input.match(/https?:\/\/\S+/)) await sb.rpc('kb_add_listing', { p_product: data.id, p_url: c.input.match(/https?:\/\/\S+/)[0] });

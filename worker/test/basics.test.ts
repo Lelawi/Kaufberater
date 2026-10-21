@@ -82,3 +82,14 @@ test('Apple-Push-Schlüssel: verunstaltet eingefügt → trotzdem gültige Signa
     assert.ok(verify('sha256', Buffer.from(`${h}.${c}`), { key: publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(s, 'base64url')));
   }
 });
+
+import { guessModel } from '../src/util/match.ts';
+test('Modellnummer aus Text raten', () => {
+  assert.equal(guessModel('Sony WH 1000XM6 Noise Cancelling Kopfhörer Schwarz'), 'WH-1000XM6');
+  assert.equal(guessModel('Sony WH-1000XM6 279 €'), 'WH-1000XM6');
+  assert.equal(guessModel('LG OLED77G6 für 2.399 €'), 'OLED77G6');
+  assert.equal(guessModel('Samsung GQ65S95F 2025'), 'GQ65S95F');
+  assert.equal(guessModel('Apple iPhone 16 Pro 256 GB'), null);
+  assert.equal(guessModel('Dyson V15 Detect Absolute'), null);
+  assert.equal(guessModel('Philips Hue 4K 120Hz Sync Box 2024'), null);
+});
