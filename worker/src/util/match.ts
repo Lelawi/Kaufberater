@@ -128,7 +128,10 @@ function capacities(s: string): string[] {
 
 /** Suchbegriff für Shops: Modellnummer bevorzugt, sonst Name */
 export function searchQuery(p: ProductQuery): string {
-  if (p.model && p.model.trim().length >= 4) return [p.brand, p.model].filter(Boolean).join(' ');
+  const m = p.model?.trim() ?? '';
+  // Kurze Nummern („77G6“) finden in Shop-Suchen wenig → dann lieber den ganzen Namen („LG OLED 77G6“)
+  if (m && norm(m).length >= 6) return [p.brand, m].filter(Boolean).join(' ');
+  if (m && norm(m).length >= 4 && !norm(p.name).includes(norm(m))) return [p.brand, m].filter(Boolean).join(' ');
   return p.name;
 }
 

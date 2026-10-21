@@ -97,28 +97,39 @@ export function offerNode(html: string, url: string): OfferData | null {
 
 export function makeSearchShop(cfg: SearchShopConfig): SourceAdapter {
   const delay = cfg.minDelayMs ?? 4000;
+  const searchOnce = async (term: string, q: ProductQuery): Promise<Candidate[]> => {
+    const p = await fetchPage(cfg.searchUrl(term), { country: cfg.country, minDelayMs: delay });
+    let hits = cfg.parseSearch ? cfg.parseSearch(p.text, cfg.base) : hitsFromJsonLd(p.text, cfg.base);
+    if (!hits.length && cfg.productLink) hits = hitsFromLinks(p.text, cfg.base, cfg.productLink);
+    // Suche leitet manchmal direkt auf die Produktseite weiter
+    if (!hits.length) {
+      const info = extractProduct(p.text);
+      if (info?.title && info.price) hits = [{ title: info.title, url: p.url, price: info.price }];
+    }
+    return hits.slice(0, 30).map((h) => {
+      const r = matchTitle(q, h.title);
+      return {
+        externalId: h.externalId ?? new URL(h.url).pathname.replace(/\/$/, '').slice(-120),
+        url: h.url, title: h.title, country: cfg.country, price: h.price ?? null,
+        condition: h.condition ?? (cfg.kind === 'refurb' ? 'refurbished' : conditionFromTitle(h.title)),
+        score: r.score, reason: r.reason,
+      };
+    });
+  };
   return {
     key: cfg.key, label: cfg.label, kind: cfg.kind ?? 'shop', countries: [cfg.country], minDelayMs: delay, needsHome: cfg.needsHome,
     async search(q: ProductQuery): Promise<Candidate[]> {
-      const term = cfg.term ? cfg.term(q) : searchQuery(q);
-      const p = await fetchPage(cfg.searchUrl(term), { country: cfg.country, minDelayMs: delay });
-      let hits = cfg.parseSearch ? cfg.parseSearch(p.text, cfg.base) : hitsFromJsonLd(p.text, cfg.base);
-      if (!hits.length && cfg.productLink) hits = hitsFromLinks(p.text, cfg.base, cfg.productLink);
-      // Suche leitet manchmal direkt auf die Produktseite weiter
-      if (!hits.length) {
-        const info = extractProduct(p.text);
-        if (info?.title && info.price) hits = [{ title: info.title, url: p.url, price: info.price }];
+      // Erst der normale Suchbegriff, dann (falls nichts Passendes) bis zu zwei gelernte Modellvarianten (z. B. OLED77G68LW)
+      const first = cfg.term ? cfg.term(q) : searchQuery(q);
+      const terms = [first, ...(q.terms ?? []).filter((t) => t.length >= 6)].filter((t, i, a) => a.findIndex((x) => x.toLowerCase() === t.toLowerCase()) === i).slice(0, 3);
+      const all: Candidate[] = [];
+      for (const term of terms) {
+        const cands = await searchOnce(term, q);
+        all.push(...cands);
+        if (cands.some((c) => c.score >= 0.75)) break;
       }
       const seen = new Set<string>();
-      return hits.filter((h) => !seen.has(h.url) && seen.add(h.url)).slice(0, 30).map((h) => {
-        const r = matchTitle(q, h.title);
-        return {
-          externalId: h.externalId ?? new URL(h.url).pathname.replace(/\/$/, '').slice(-120),
-          url: h.url, title: h.title, country: cfg.country, price: h.price ?? null,
-          condition: h.condition ?? (cfg.kind === 'refurb' ? 'refurbished' : conditionFromTitle(h.title)),
-          score: r.score, reason: r.reason,
-        };
-      });
+      return all.filter((c) => !seen.has(c.url) && seen.add(c.url));
     },
     async fetch(l: ListingRef): Promise<OfferData[]> {
       const p = await fetchPage(l.url, { country: cfg.country, minDelayMs: delay });
