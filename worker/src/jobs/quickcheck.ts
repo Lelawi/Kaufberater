@@ -33,6 +33,8 @@ export async function runQuickChecks(deadline: number) {
   return { done };
 }
 
+const IMPORT_MARKET = /\b(aliexpress|temu|wish|joybuy|banggood|gearbest|tomtop|geekbuying)\b/i;
+
 async function check(input: string, userId: string) {
   const urlMatch = input.match(/https?:\/\/\S+/);
   let name: string | null = null; let price: number | null = null; let shop: string | null = null; let url: string | null = null;
@@ -91,7 +93,10 @@ async function check(input: string, userId: string) {
     const mydealz = pepperAdapters.find((a) => a.key === 'mydealz');
     const deals = mydealz ? (await mydealz.search({ ...q, name: model ?? name })).filter((d) => d.price && !(d as any).foreign && (!model || strong((d as any).reason))) : [];
     const year = Date.now() - 365 * 864e5;
-    const recent = deals.filter((d) => !d.postedAt || d.postedAt.getTime() > year).sort((a, b) => (a.price ?? 1e9) - (b.price ?? 1e9));
+    // Importware-Marktplätze und unplausibel billige Deals (oft andere Variante/Fälschung) nicht als Maßstab nehmen
+    const recent = deals.filter((d) => (!d.postedAt || d.postedAt.getTime() > year) && !IMPORT_MARKET.test(d.merchant ?? '') && !IMPORT_MARKET.test(d.title))
+      .filter((d) => !best || d.price! >= best * 0.55)
+      .sort((a, b) => (a.price ?? 1e9) - (b.price ?? 1e9));
     if (recent[0]) dealLow = { price: recent[0].price!, merchant: recent[0].merchant ?? null, date: recent[0].postedAt?.toISOString().slice(0, 10) ?? null, url: recent[0].url };
   } catch (e) { console.log('Schnellcheck mydealz:', (e as Error).message); }
 
@@ -117,7 +122,7 @@ async function check(input: string, userId: string) {
   }
   if (dealLow) {
     parts.push(`Bester mydealz-Deal im letzten Jahr: ${fmtEur(dealLow.price)}${dealLow.merchant ? ` bei ${dealLow.merchant}` : ''}${dealLow.date ? ` (${dealLow.date.split('-').reverse().join('.')})` : ''}.`);
-    if (price && verdict !== 'bad' && price > dealLow.price * 1.08) parts.push('Es ging also schon deutlich günstiger – wenn es nicht eilt, lohnt sich Warten.');
+    if (price && (verdict === 'good' || verdict === 'ok') && price > dealLow.price * 1.08) parts.push('Es ging also schon deutlich günstiger – wenn es nicht eilt, lohnt sich Warten.');
   }
   if (listPrice && best && listPrice > best * 1.3) parts.push(`Vorsicht: Der Streichpreis ${fmtEur(listPrice)} ist ein Mondpreis – der Rabatt wirkt größer, als er ist.`);
   if (watched) {
