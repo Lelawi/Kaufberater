@@ -10,6 +10,7 @@ final class ShareViewController: UIViewController {
     private var sharedText: String?    // kompletter geteilter Text, z. B. „Produktname https://amzn.eu/…“
     private let card = UIView()
     private let label = UILabel()
+    private let priceField = UITextField()
     private var buttons: [UIButton] = []
 
     override func viewDidLoad() {
@@ -34,6 +35,13 @@ final class ShareViewController: UIViewController {
         label.textColor = .secondaryLabel
         label.numberOfLines = 3
 
+        // Preis (optional) – damit der Schnellcheck sagen kann, ob es ein guter Preis ist
+        priceField.placeholder = "Preis in € (optional, z. B. 279)"
+        priceField.keyboardType = .decimalPad
+        priceField.borderStyle = .roundedRect
+        priceField.font = .systemFont(ofSize: 16)
+        priceField.heightAnchor.constraint(equalToConstant: 44).isActive = true
+
         let check = button("Ist das ein Deal?", filled: true) { [weak self] in self?.hand(over: "check") }
         let add = button("Auf die Wunschliste", filled: false) { [weak self] in self?.hand(over: "add") }
         buttons = [check, add]
@@ -41,7 +49,7 @@ final class ShareViewController: UIViewController {
         cancel.setTitle("Abbrechen", for: .normal)
         cancel.addAction(UIAction { [weak self] _ in self?.finish() }, for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [title, label, check, add, cancel])
+        let stack = UIStackView(arrangedSubviews: [title, label, priceField, check, add, cancel])
         stack.axis = .vertical
         stack.spacing = 12
         stack.setCustomSpacing(18, after: label)
@@ -50,7 +58,7 @@ final class ShareViewController: UIViewController {
         NSLayoutConstraint.activate([
             card.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             card.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            card.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            card.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -12),
             stack.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 20),
             stack.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -20),
             stack.topAnchor.constraint(equalTo: card.topAnchor, constant: 20),
@@ -104,7 +112,9 @@ final class ShareViewController: UIViewController {
     private func hand(over action: String) {
         guard let s = shared else { return finish() }
         // Schnellcheck bekommt Link + Text (Name hilft bei Kurzlinks), Eintragen nur den Link
-        let forCheck = sharedText.map { $0.contains(s) ? $0 : "\($0) \(s)" } ?? s
+        var forCheck = sharedText.map { $0.contains(s) ? $0 : "\($0) \(s)" } ?? s
+        let price = (priceField.text ?? "").trimmingCharacters(in: .whitespaces)
+        if !price.isEmpty, price.contains(where: \.isNumber) { forCheck += " \(price) €" }
         let enc = { (x: String) in x.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? x }
         let path = action == "check" ? "#/check?auto=1&u=\(enc(forCheck))" : "#/add?u=\(enc(s))"
         let center = UNUserNotificationCenter.current()
