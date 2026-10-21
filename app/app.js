@@ -2,12 +2,18 @@
 import { sb, html, raw, esc, safeUrl, fmtEur, fmtEur0, priceTag, fmtDate, ago, daysUntil, levelOf, LEVEL_TEXT, toast, md, nextShoppingEvent } from './lib.js';
 import { ladder, priceChart } from './chart.js';
 
+/** Läuft die Oberfläche in der iPhone-App (statt im Browser)? */
+const NATIVE = window.kbNative?.platform === 'ios' ? window.kbNative : null;
+if (NATIVE) {
+  // Neuer Token von Apple (z. B. nach Neuinstallation) → speichern
+  NATIVE.onPushToken = (token) => { if (session) saveApnsToken(token).catch(() => {}); };
+}
 const view = document.getElementById('view');
 const tabs = document.getElementById('tabs');
 let session = null;
 
 // ---------- Start ----------
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && !NATIVE) navigator.serviceWorker.register('sw.js').catch(() => {});
 session = (await sb.auth.getSession()).data.session;
 sb.auth.onAuthStateChange((ev, s) => {
   if (ev === 'INITIAL_SESSION') return;
@@ -51,7 +57,8 @@ async function refreshBadge() {
   const { count } = await sb.from('kb_alerts').select('id', { count: 'exact', head: true }).is('read_at', null);
   const b = document.getElementById('alertBadge');
   b.hidden = !count; b.textContent = count > 99 ? '99+' : String(count ?? '');
-  if (navigator.setAppBadge) (count ? navigator.setAppBadge(count) : navigator.clearAppBadge?.()).catch?.(() => {});
+  if (window.kbNative?.platform === 'ios') window.kbNative.call('badge', { count: count ?? 0 }).catch(() => {});
+  else if (navigator.setAppBadge) (count ? navigator.setAppBadge(count) : navigator.clearAppBadge?.()).catch?.(() => {});
 }
 
 // ---------- Anmeldung ----------
@@ -617,7 +624,7 @@ async function viewSettings() {
   const { data: setup } = await sb.rpc('kb_setup_status');
   const kindText = { voucher: 'Gutschein', membership: 'Mitgliedschaft', cashback: 'Cashback-Konto', payment: 'Zahlungsart' };
   const isIOS = /iPhone|iPad/.test(navigator.userAgent);
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone || !!NATIVE;
   render(html`<div class="head"><h1>Einstellungen</h1></div>
   ${setupPanel(setup, pushState)}
   <section class="panel" id="push"><h2>Push-Nachrichten</h2>
@@ -664,10 +671,10 @@ async function viewSettings() {
       <li>App <strong>Kurzbefehle</strong> öffnen → <strong>+</strong> → oben auf den Namen tippen: „Ist das ein Deal?“.</li>
       <li>Unten auf <strong>i</strong> (Details) → <strong>Im Share-Sheet anzeigen</strong> einschalten.</li>
       <li>Aktion <strong>Text codieren</strong> hinzufügen (Modus: URL), Eingabe: <em>Kurzbefehleingabe</em>.</li>
-      <li>Aktion <strong>URL</strong> hinzufügen mit:<br><code style="word-break:break-all">${location.origin + location.pathname}#/check?auto=1&amp;u=</code> und dahinter die Variable <em>Codierter Text</em>.</li>
+      <li>Aktion <strong>URL</strong> hinzufügen mit:<br><code style="word-break:break-all">${NATIVE ? 'kaufberater://check?u=' : location.origin + location.pathname + '#/check?auto=1&u='}</code> und dahinter die Variable <em>Codierter Text</em>.</li>
       <li>Aktion <strong>URLs öffnen</strong> hinzufügen. Fertig.</li>
     </ol>
-    <p class="hint">Der Link öffnet sich in Safari. Melde dich dort einmal mit demselben Konto an.</p>
+    <p class="hint">${NATIVE ? 'Der Kurzbefehl öffnet direkt die Kaufberater-App.' : 'Der Link öffnet sich in Safari. Melde dich dort einmal mit demselben Konto an.'}</p>
   </section>
   <section class="panel flat"><h2>Quellen</h2>
     <p class="hint" style="margin-top:-6px">Letzter Durchlauf: ${ago(rR.data?.[0]?.finished_at ?? rR.data?.[0]?.started_at)}. Amazon, MediaMarkt, Geizhals und weitere Shops kommen dazu, sobald der Heim-Server (Raspberry Pi) läuft.</p>
@@ -675,6 +682,14 @@ async function viewSettings() {
   </section>
   <section class="panel flat"><div class="btn-row"><button class="btn ghost" id="logout">Abmelden</button></div></section>`);
 
+  document.getElementById('apnsForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const g = (x) => document.getElementById(x).value;
+    const { error } = await sb.rpc('kb_set_apns_key', { p_key: g('apk'), p_key_id: g('apkid'), p_team_id: g('apteam') });
+    if (error) return toast(error.message);
+    toast('Gespeichert – Mitteilungen sind bereit');
+    route();
+  });
   document.getElementById('tokForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = e.target.querySelector('button'); btn.disabled = true;
@@ -715,7 +730,8 @@ function setupPanel(st, pushState) {
   const code = st.last_dispatch_status;
   const keyState = !st.github_key ? 'missing' : code === 204 ? 'ok' : code === 401 ? 'invalid' : (code === 403 || code === 404) ? 'rights' : 'unknown';
   const item = (ok, title, text) => html`<li style="align-items:flex-start"><span><strong>${ok ? '✓' : '○'} ${title}</strong><div class="hint">${text}</div></span></li>`;
-  const allOk = pushOk && keyState === 'ok';
+  const apnsMissing = NATIVE && !st.apns_ready;
+  const allOk = pushOk && keyState === 'ok' && !apnsMissing;
   return html`<section class="panel ${allOk ? 'flat' : ''}"><h2>${allOk ? 'Alles eingerichtet' : 'Einrichtung'}</h2>
     <ul class="list-plain">
       ${item(pushOk, 'Push-Nachrichten', pushOk ? 'Auf diesem Gerät eingeschaltet.' : html`Noch aus – <a href="#/settings" onclick="document.getElementById('push').scrollIntoView({behavior:'smooth'});return false">unten einschalten</a>.`)}
@@ -725,6 +741,7 @@ function setupPanel(st, pushState) {
         : keyState === 'rights' ? 'Der GitHub-Schlüssel hat nicht die nötige Berechtigung („Actions: Read and write“ für das Repo Kaufberater).'
         : keyState === 'unknown' ? 'Schlüssel ist hinterlegt, der erste Test läuft noch.'
         : 'Ohne GitHub-Schlüssel startet die Preisabfrage nur, wenn GitHub Zeit hat – oft nur alle paar Stunden.')}
+      ${NATIVE ? item(!!st.apns_ready, 'iPhone-Mitteilungen (Apple)', st.apns_ready ? 'Apple-Push-Schlüssel ist hinterlegt.' : 'Damit Mitteilungen in der App ankommen, braucht der Server einmal deinen Apple-Push-Schlüssel (siehe unten).') : ''}
       ${item(st.runs_24h >= 12, 'Preisabfrage', html`Zuletzt ${ago(st.last_run_at)} · ${st.runs_24h} Durchläufe in 24 Std.${st.home_active ? ' · Heim-Server aktiv' : ''}`)}
     </ul>
     ${keyState !== 'ok' && keyState !== 'unknown' ? html`<details class="more" ${keyState !== 'missing' ? 'open' : ''}><summary>GitHub-Schlüssel eintragen</summary>
@@ -737,11 +754,29 @@ function setupPanel(st, pushState) {
       <form id="tokForm" style="display:flex;gap:8px"><input id="tok" type="password" autocomplete="off" placeholder="github_pat_…" required><button class="btn small" type="submit">Speichern</button></form>
       <p class="hint">Der Schlüssel wird verschlüsselt in der Datenbank gespeichert und kann nur Abläufe in deinem Kaufberater-Repo starten.</p>
     </details>` : ''}
+    ${apnsMissing || (NATIVE && location.hash.includes('apns')) ? html`<details class="more" open><summary>Apple-Push-Schlüssel eintragen</summary>
+      <ol class="prose" style="padding-left:20px">
+        <li><a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noopener">developer.apple.com → Keys</a> → <strong>+</strong>, Name „Kaufberater Push“, Haken bei <strong>Apple Push Notifications service (APNs)</strong> → herunterladen.</li>
+        <li>Die .p8-Datei in der Dateien-App öffnen, den ganzen Text kopieren (inkl. BEGIN/END) und unten einfügen.</li>
+        <li>Key-ID (10 Zeichen, steht beim Schlüssel) und Team-ID (unter „Membership details“) eintragen.</li>
+      </ol>
+      <form id="apnsForm">
+        <div class="field"><label for="apk">Inhalt der .p8-Datei</label><textarea id="apk" required placeholder="-----BEGIN PRIVATE KEY-----"></textarea></div>
+        <div class="grid-2"><div class="field"><label for="apkid">Key-ID</label><input id="apkid" type="text" required maxlength="10" autocapitalize="characters"></div>
+          <div class="field"><label for="apteam">Team-ID</label><input id="apteam" type="text" required maxlength="10" autocapitalize="characters"></div></div>
+        <button class="btn small" type="submit">Speichern</button>
+      </form></details>` : ''}
   </section>`;
 }
 
 // ---------- Push ----------
+async function saveApnsToken(token) {
+  const { error } = await sb.from('kb_push_subscriptions').upsert({ endpoint: 'apns:' + token, kind: 'apns', p256dh: null, auth: null, device: 'iPhone-App' }, { onConflict: 'endpoint' });
+  if (error) throw error;
+}
+
 async function currentPushState() {
+  if (NATIVE) { try { return await NATIVE.call('push-status'); } catch { return 'off'; } }
   if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'unsupported';
   if (Notification.permission === 'denied') return 'denied';
   const reg = await navigator.serviceWorker.ready;
@@ -749,6 +784,11 @@ async function currentPushState() {
   return sub ? 'on' : 'off';
 }
 async function enablePush() {
+  if (NATIVE) {
+    try { const token = await NATIVE.call('push-enable'); await saveApnsToken(token); toast('Mitteilungen sind eingeschaltet'); }
+    catch (e) { toast(e.message ?? String(e)); }
+    return route();
+  }
   try {
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') { toast('Mitteilungen wurden nicht erlaubt'); return route(); }
@@ -764,6 +804,7 @@ async function enablePush() {
   route();
 }
 async function disablePush() {
+  if (NATIVE) { toast('Mitteilungen schaltest du in den iPhone-Einstellungen unter Mitteilungen → Kaufberater aus.'); return; }
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.getSubscription();
   if (sub) { await sb.from('kb_push_subscriptions').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); }

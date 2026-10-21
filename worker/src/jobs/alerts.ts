@@ -1,6 +1,7 @@
 // Benachrichtigungen anlegen und per Push (iPhone/Browser) und E-Mail verschicken
 import webpush from 'web-push';
 import { db, workerConfig } from '../db.ts';
+import { apnsReady, sendApns, closeApns } from '../util/apns.ts';
 
 export interface NewAlert {
   userId: string;
@@ -57,13 +58,29 @@ export async function deliverAlerts() {
   const stats = { push: 0, email: 0, failed: 0 };
   if (!pending.length) return stats;
   const pushOk = await initVapid();
+  const apnsOk = await apnsReady();
   const mailer = await getMailer();
   for (const a of pending) {
     const quiet = a.level !== 'instant' && inQuietHours(a.quiet_from, a.quiet_to);
     if (quiet) continue;
     let sent = false;
+    if (a.push_alerts !== false && apnsOk) {
+      // iPhone-App (Apple Push)
+      const devices = await sql`select id, endpoint from kb_push_subscriptions where user_id = ${a.user_id} and kind = 'apns' and fail_count < 10`;
+      const [{ n: unread }] = await sql`select count(*)::int as n from kb_alerts where user_id = ${a.user_id} and read_at is null`;
+      for (const d of devices) {
+        const r = await sendApns(String(d.endpoint).replace(/^apns:/, ''), {
+          title: a.title, body: a.body ?? '', path: a.product_id ? `#/p/${a.product_id}` : '#/alerts',
+          badge: unread, collapseId: a.dedup_key, urgent: a.level === 'instant',
+        });
+        if (r.status === 200) { sent = true; stats.push++; await sql`update kb_push_subscriptions set last_ok_at = now(), fail_count = 0 where id = ${d.id}`; }
+        else if (r.status === 410 || (r.status === 400 && /BadDeviceToken|DeviceTokenNotForTopic/.test(r.reason ?? ''))) {
+          await sql`delete from kb_push_subscriptions where id = ${d.id}`;
+        } else { stats.failed++; console.log('APNs:', r.status, r.reason); await sql`update kb_push_subscriptions set fail_count = fail_count + 1 where id = ${d.id}`; }
+      }
+    }
     if (pushOk && a.push_alerts !== false) {
-      const subs = await sql`select id, endpoint, p256dh, auth from kb_push_subscriptions where user_id = ${a.user_id} and fail_count < 10`;
+      const subs = await sql`select id, endpoint, p256dh, auth from kb_push_subscriptions where user_id = ${a.user_id} and kind = 'web' and fail_count < 10`;
       const payload = JSON.stringify({
         title: a.title, body: a.body ?? '', url: a.product_id ? `${APP_URL}#/p/${a.product_id}` : APP_URL, shopUrl: a.url,
         tag: a.dedup_key, level: a.level,
@@ -90,6 +107,7 @@ export async function deliverAlerts() {
     await sql`update kb_alerts set push_sent_at = now() where id = ${a.id}`;
     void sent;
   }
+  closeApns();
   return stats;
 }
 

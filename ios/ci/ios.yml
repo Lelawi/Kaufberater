@@ -1,0 +1,62 @@
+name: ios
+# Baut die iPhone-App auf einem Mac von GitHub (kostenlos, weil dieses Repo öffentlich ist) und lädt sie zu TestFlight hoch.
+# Benötigte Secrets (Settings → Secrets and variables → Actions): ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID
+# Ohne Secrets wird nur ein Testbuild für den Simulator gemacht (prüft, ob der Code kompiliert).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios.yml']
+concurrency: { group: ios, cancel-in-progress: true }
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      HAS_ASC: ${{ secrets.ASC_KEY_P8 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Neuestes Xcode wählen
+        run: |
+          X=$(ls -d /Applications/Xcode_*.app | grep -v beta | sort -V | tail -1)
+          sudo xcode-select -s "$X"
+          xcodebuild -version
+      - name: Projekt erzeugen
+        run: brew install xcodegen >/dev/null && cd ios && xcodegen generate
+      - name: Testbuild (Simulator, ohne Signatur)
+        run: |
+          cd ios
+          xcodebuild -project Kaufberater.xcodeproj -scheme Kaufberater -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build > build.log 2>&1 \
+            || { grep -E " error: |error:" build.log | sort -u | head -30 | sed 's/^/::error::/'; tail -40 build.log; exit 1; }
+          echo "::notice::Testbuild erfolgreich"
+      - name: Apple-Account vorbereiten
+        if: env.HAS_ASC == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          printf '%s\n' "$ASC_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          node ios/scripts/asc-setup.mjs
+      - name: Signieren und zu TestFlight hochladen
+        if: env.HAS_ASC == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEY=~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8
+          AUTH="-allowProvisioningUpdates -authenticationKeyPath $KEY -authenticationKeyID $ASC_KEY_ID -authenticationKeyIssuerID $ASC_ISSUER_ID"
+          cd ios
+          xcodebuild -project Kaufberater.xcodeproj -scheme Kaufberater -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -archivePath build/Kaufberater.xcarchive \
+            DEVELOPMENT_TEAM=$TEAM_ID CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            $AUTH archive > archive.log 2>&1 \
+            || { grep -E "error:|requires a provisioning profile|No profiles|Signing" archive.log | sort -u | head -30 | sed 's/^/::error::/'; tail -40 archive.log; exit 1; }
+          sed "s/TEAM_ID_PLACEHOLDER/$TEAM_ID/" ci/ExportOptions.plist > build/ExportOptions.plist
+          xcodebuild -exportArchive -archivePath build/Kaufberater.xcarchive -exportOptionsPlist build/ExportOptions.plist \
+            -exportPath build/export $AUTH > export.log 2>&1 \
+            || { grep -E "error|Error" export.log | sort -u | head -30 | sed 's/^/::error::/'; tail -40 export.log; exit 1; }
+          echo "::notice::Hochgeladen. Nach ca. 10–20 Minuten Verarbeitung erscheint die App in TestFlight."
