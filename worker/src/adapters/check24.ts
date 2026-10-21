@@ -77,8 +77,14 @@ export function parseCheck24Product(html: string, pageUrl: string): { offers: Of
 export const check24Adapter: SourceAdapter = {
   key: 'check24', label: 'CHECK24', kind: 'aggregator', countries: ['DE'], minDelayMs: 3500,
   async search(q: ProductQuery) {
-    const p = await fetchPage(`https://www.check24.de/suche/?q=${encodeURIComponent(searchQuery(q))}`, { minDelayMs: 3500 });
-    return parseCheck24Search(p.text, q);
+    // Name/Modell und bis zu zwei gelernte Varianten (OLED77G68LW, OLED77G67LW …) – CHECK24 führt Varianten als eigene Produkte
+    const terms = [searchQuery(q), ...(q.terms ?? []).filter((t) => t.length >= 6).slice(0, 2)];
+    const out = new Map<string, Candidate>();
+    for (const t of terms) {
+      const p = await fetchPage(`https://www.check24.de/suche/?q=${encodeURIComponent(t)}`, { minDelayMs: 3500 });
+      for (const c of parseCheck24Search(p.text, q)) if (!out.has(c.externalId) || out.get(c.externalId)!.score < c.score) out.set(c.externalId, c);
+    }
+    return [...out.values()];
   },
   async fetch(l: ListingRef) {
     const p = await fetchPage(l.url, { minDelayMs: 3500 });
