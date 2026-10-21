@@ -20,6 +20,11 @@ Ablauf eines Worker-Durchlaufs (`worker/src/run.ts`):
 5. **Vorläufige Schwellen** (`jobs/autothresholds.ts`): sofort aus Bestpreis + früheren Deals, bis die Tiefenanalyse übernimmt.
 6. **Zustellen** (`jobs/alerts.ts`): Web-Push (und optional E-Mail).
 
+## Preisverlauf
+- Eigene Abfragen: je Angebot ein Stützpunkt pro Kalendertag und bei jeder Preisänderung (`series='offer'`).
+- billiger.de liefert auf der Produktseite ca. 6 Monate Tagestiefstpreise mit (`data-pricehistory-data`) → `series='hist:billiger'` (nur fehlende Tage). Fließt in Diagramm (`kb_price_series`), vorläufige Schwellen (10-%-Tiefpunkt) und die Tiefenanalyse ein.
+- Deals als Punkte (`series='deal:<portal>'`); im Diagramm werden Deals unter 40 % des Bestpreises ausgeblendet (Zubehör/Fehlzuordnung).
+
 ## Schutzmechanismen
 - **Freischaltung:** Nur Konten in `kb_members` dürfen Produkte/Schnellchecks anlegen (Anmeldung ist mit MarsiHome geteilt). Neues Konto freischalten: `insert into kb_members (user_id) values ('<uuid>')`.
 - **Unplausible Angebote** (`util/plausible.ts`): Miet-/Abo-Shops (Grover …) und Preise < 35 % des Mittelwerts von wenig bekannten Shops fliegen raus; Deals von Import-Marktplätzen (AliExpress …) werden markiert und nicht für Schwellen genutzt.
