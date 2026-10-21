@@ -292,7 +292,7 @@ async function viewProduct(id) {
   const a = analysisR.data?.[0];
   const newOffers = mergeOffers(offers.filter((o) => o.condition === 'new'));
   const refurb = mergeOffers(offers.filter((o) => o.condition !== 'new'));
-  const best = newOffers[0];
+  const best = offers.find((o) => o.id === p.best_offer_id) ?? newOffers[0];
   const lvl = levelOf(p.best_price, p);
   const isBought = p.status === 'bought';
 
