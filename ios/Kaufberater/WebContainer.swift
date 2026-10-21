@@ -65,7 +65,9 @@ struct WebContainer: UIViewRepresentable {
                 guard let self, let web = self.web else { return }
                 Router.shared.pendingHash = nil
                 if self.loadedOnce {
-                    let js = "location.hash = \(Self.jsString(hash));"
+                    // Gleiches Ziel wie gerade offen (z. B. derselbe Link zweimal geteilt) → trotzdem neu laden
+                    let h = Self.jsString(hash)
+                    let js = "if (location.hash === \(h)) window.dispatchEvent(new HashChangeEvent('hashchange')); else location.hash = \(h);"
                     web.evaluateJavaScript(js)
                 } else {
                     self.loadStart(hash: hash)
