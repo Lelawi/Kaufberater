@@ -121,3 +121,10 @@ test('Analyse vor der Black Week', () => {
   assert.equal(preBlackWeekAnalysis(new Date('2026-11-05T12:00:00Z'))!.toISOString(), '2026-11-22T03:00:00.000Z');
   assert.equal(preBlackWeekAnalysis(new Date('2026-11-23T12:00:00Z')), null);
 });
+
+import { parseBilligerHistory } from '../src/adapters/billiger.ts';
+test('Preisverlauf von billiger.de lesen', () => {
+  const html = `<script type="application/json" data-pricehistory-data>{"series":[{"name":"billiger","data":[4999.0,null,4499.5]}],"labels":["21.05.2026","22.05.2026","23.05.2026"]}</script>`;
+  assert.deepEqual(parseBilligerHistory(html), [{ date: '2026-05-21', price: 4999 }, { date: '2026-05-23', price: 4499.5 }]);
+  assert.deepEqual(parseBilligerHistory('<html></html>'), []);
+});

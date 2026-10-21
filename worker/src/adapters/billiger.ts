@@ -66,8 +66,30 @@ async function search(q: ProductQuery): Promise<Candidate[]> {
   return parseBilligerSearch(p.text, q);
 }
 
+/** Preisverlauf der Produktseite (billiger.de zeigt den günstigsten Preis je Tag, ca. 6 Monate zurück) */
+export function parseBilligerHistory(html: string): { date: string; price: number }[] {
+  const m = html.match(/<script type="application\/json" data-pricehistory-data>([\s\S]*?)<\/script>/);
+  if (!m) return [];
+  try {
+    const d = JSON.parse(m[1]);
+    const labels: string[] = d.labels ?? [];
+    const data: (number | null)[] = d.series?.find((x: any) => x.name === 'billiger')?.data ?? d.series?.[0]?.data ?? [];
+    const out: { date: string; price: number }[] = [];
+    labels.forEach((l, i) => {
+      const v = data[i];
+      const dm = l.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+      if (dm && typeof v === 'number' && v > 0) out.push({ date: `${dm[3]}-${dm[2]}-${dm[1]}`, price: v });
+    });
+    return out;
+  } catch { return []; }
+}
+/** Zuletzt gelesener Verlauf je Seite – check.ts übernimmt ihn in die Preisgeschichte */
+export const billigerHistory = new Map<string, { date: string; price: number }[]>();
+
 async function fetchOffers(l: ListingRef): Promise<OfferData[]> {
   const p = await fetchPage(l.url, { minDelayMs: 3000 });
+  const hist = parseBilligerHistory(p.text);
+  if (hist.length) billigerHistory.set(l.url, hist);
   const r = parseBilligerOffers(p.text, p.url);
   if (!r.offers.length) {
     // Rückfall: Angebotsliste aus den Produktdaten (ohne Versand)

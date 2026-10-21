@@ -7,6 +7,7 @@ import { blockedSources, recordSourceResult } from './health.ts';
 import type { OfferData } from '../adapters/types.ts';
 import { plausibleOffers } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
+import { billigerHistory } from '../adapters/billiger.ts';
 
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
@@ -68,6 +69,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
           }
         }
         const r = await saveOffers(l, usable);
+        if (l.source === 'billiger') await importHistory(l, billigerHistory.get(l.url)).catch((e) => console.log('Preisverlauf:', e.message));
         // Nur per Link eingetragen? Dann den richtigen Produktnamen von der Seite übernehmen und danach überall suchen
         const pageTitle = offers.find((o) => o.title)?.title;
         if (l.p_name_auto && pageTitle) {
@@ -150,4 +152,19 @@ async function saveOffers(l: DueListing, offersIn: OfferData[]) {
   // Angebote, die nicht mehr auftauchen, als verschwunden markieren
   await sql`update kb_offers set gone = true where listing_id = ${l.id} and not (offer_key = any(${rows.map((r) => r.offer_key)})) and not gone`;
   return { offers: rows.length, changes };
+}
+
+/** Preisverlauf vom Preisvergleich übernehmen (nur Tage, die noch fehlen; heute zählt die eigene Abfrage) */
+async function importHistory(l: DueListing, hist: { date: string; price: number }[] | undefined) {
+  if (!hist?.length) return;
+  const sql = await db();
+  const series = 'hist:' + l.source;
+  const [{ last }] = await sql`select max((observed_at at time zone 'Europe/Berlin')::date)::text as last from kb_price_history
+                               where product_id = ${l.product_id} and series = ${series} and shop = ${l.external_id}`;
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+  const rows = hist.filter((h) => h.date < today && (!last || h.date > last)).map((h) => ({
+    product_id: l.product_id, user_id: l.user_id, series, shop: l.external_id, condition: 'new',
+    observed_at: new Date(`${h.date}T12:00:00+01:00`), total: h.price, in_stock: null,
+  }));
+  if (rows.length) await sql`insert into kb_price_history ${sql(rows)}`;
 }

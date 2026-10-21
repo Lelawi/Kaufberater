@@ -50,7 +50,13 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
     // Nur Deals, die in Deutschland erreichbar waren (Auslands-Deals sind mit einer Notiz markiert)
     const deals = await sql`select price from kb_deals where product_id = ${p.id} and price is not null and match_score >= 0.85
                             and notes is null and (posted_at is null or posted_at > now() - interval '18 months')`;
-    const t = computeThresholds(Number(p.best_price), p.lowest_seen ? Number(p.lowest_seen) : null, deals.map((d) => Number(d.price)));
+    // Preisverlauf der Preisvergleiche (ca. 6 Monate): 10-%-Tiefpunkt, damit ein einzelner Ausreißer-Tag nicht zählt
+    const [h] = await sql`select percentile_cont(0.1) within group (order by d.m) as low, count(*)::int as n from (
+                            select (observed_at at time zone 'Europe/Berlin')::date as day, min(total) as m from kb_price_history
+                            where product_id = ${p.id} and series like 'hist:%' and observed_at > now() - interval '200 days' group by 1) d`;
+    const histLow = h?.n >= 20 && h.low ? Number(h.low) : null;
+    const seen = [p.lowest_seen ? Number(p.lowest_seen) : null, histLow].filter((x): x is number => x != null);
+    const t = computeThresholds(Number(p.best_price), seen.length ? Math.min(...seen) : null, deals.map((d) => Number(d.price)));
     const upd = await sql`update kb_products set threshold_good = ${t.good}, threshold_top = ${t.top}, threshold_instant = ${t.instant}, threshold_source = 'auto'
               where id = ${p.id} and not thresholds_manual and (threshold_good is null or threshold_source = 'auto')
                 and (threshold_good, threshold_top, threshold_instant) is distinct from (${t.good}::numeric, ${t.top}::numeric, ${t.instant}::numeric)
