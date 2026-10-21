@@ -40,9 +40,12 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
 
     // 1) Effektiver Endpreis je Angebot
     const enriched = offers.map((o) => ({ o, ...effective(o, vouchers, rates) }));
-    for (const e of enriched) {
-      await sql`update kb_offers set effective_total = ${e.eff}, effective_notes = ${e.notes || null} where id = ${e.o.id}
-                and (effective_total is distinct from ${e.eff} or effective_notes is distinct from ${e.notes || null})`;
+    if (enriched.length) {
+      // alle Endpreise in einer Abfrage aktualisieren
+      const upd = enriched.map((e) => ({ id: e.o.id, eff: e.eff, notes: e.notes || null }));
+      await sql`update kb_offers o set effective_total = v.eff, effective_notes = v.notes
+                from jsonb_to_recordset(${sql.json(upd as any)}) as v(id uuid, eff numeric, notes text)
+                where o.id = v.id and (o.effective_total is distinct from v.eff or o.effective_notes is distinct from v.notes)`;
     }
 
     // 2) Bestpreise

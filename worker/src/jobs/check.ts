@@ -81,42 +81,57 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
   return stats;
 }
 
-async function saveOffers(l: DueListing, offers: OfferData[]) {
+async function saveOffers(l: DueListing, offersIn: OfferData[]) {
   const sql = await db();
+  // gleiche Angebots-Kennung nur einmal (günstigstes behalten) – sonst scheitert das Sammel-Speichern
+  const byKey = new Map<string, OfferData>();
+  for (const o of offersIn) {
+    const cur = byKey.get(o.offerKey);
+    if (!cur || o.price + (o.shipping ?? 0) < cur.price + (cur.shipping ?? 0)) byKey.set(o.offerKey, o);
+  }
+  const offers = [...byKey.values()];
+  if (!offers.length) {
+    await sql`update kb_offers set gone = true where listing_id = ${l.id} and not gone`;
+    return { offers: 0, changes: 0 };
+  }
+  // Bisheriger Stand in einer Abfrage
+  const prevRows = await sql`
+    select o.offer_key, o.total, (select max(h.observed_at) from kb_price_history h where h.offer_id = o.id) as last_hist
+    from kb_offers o where o.listing_id = ${l.id}`;
+  const prev = new Map(prevRows.map((r) => [r.offer_key as string, r]));
+  const rows = offers.map((o) => ({
+    product_id: l.product_id, listing_id: l.id, user_id: l.user_id, offer_key: o.offerKey, source: l.source, shop: o.shop,
+    country: o.country, condition: o.condition, title: o.title?.slice(0, 500) ?? null, url: o.url ?? l.url, price: o.price,
+    shipping: o.shipping ?? null, total: Math.round((o.price + (o.shipping ?? 0)) * 100) / 100, list_price: o.listPrice ?? null,
+    in_stock: o.inStock ?? null, delivery_text: o.deliveryText?.slice(0, 200) ?? null, seller: o.seller?.slice(0, 200) ?? null,
+    shop_rating: o.shopRating ?? null, shop_reviews: o.shopReviews ?? null, gone: false,
+  }));
+  // Alle Angebote in einem Schritt speichern
+  const saved = await sql`
+    insert into kb_offers ${sql(rows)}
+    on conflict (listing_id, offer_key) do update set
+      shop = excluded.shop, country = excluded.country, condition = excluded.condition, title = coalesce(excluded.title, kb_offers.title),
+      url = excluded.url, price = excluded.price, shipping = excluded.shipping, total = excluded.total, list_price = excluded.list_price,
+      in_stock = excluded.in_stock, delivery_text = excluded.delivery_text, seller = excluded.seller,
+      shop_rating = coalesce(excluded.shop_rating, kb_offers.shop_rating), shop_reviews = coalesce(excluded.shop_reviews, kb_offers.shop_reviews),
+      last_seen_at = now(), gone = false
+    returning id, offer_key`;
+  const idByKey = new Map(saved.map((r) => [r.offer_key as string, r.id as string]));
+  // Verlauf: bei Preisänderung oder spätestens alle 24h ein Stützpunkt
   let changes = 0;
-  const keys: string[] = [];
-  for (const o of offers) {
-    const total = Math.round((o.price + (o.shipping ?? 0)) * 100) / 100;
-    keys.push(o.offerKey);
-    const prev = await sql`select id, total from kb_offers where listing_id = ${l.id} and offer_key = ${o.offerKey}`;
-    const row = await sql`
-      insert into kb_offers (product_id, listing_id, user_id, offer_key, source, shop, country, condition, title, url, price, shipping, total,
-                             list_price, in_stock, delivery_text, seller, shop_rating, shop_reviews, last_seen_at, gone)
-      values (${l.product_id}, ${l.id}, ${l.user_id}, ${o.offerKey}, ${l.source}, ${o.shop}, ${o.country}, ${o.condition}, ${o.title?.slice(0, 500) ?? null},
-              ${o.url ?? l.url}, ${o.price}, ${o.shipping ?? null}, ${total}, ${o.listPrice ?? null}, ${o.inStock ?? null},
-              ${o.deliveryText?.slice(0, 200) ?? null}, ${o.seller?.slice(0, 200) ?? null}, ${o.shopRating ?? null}, ${o.shopReviews ?? null}, now(), false)
-      on conflict (listing_id, offer_key) do update set
-        shop = excluded.shop, country = excluded.country, condition = excluded.condition, title = coalesce(excluded.title, kb_offers.title),
-        url = excluded.url, price = excluded.price, shipping = excluded.shipping, total = excluded.total, list_price = excluded.list_price,
-        in_stock = excluded.in_stock, delivery_text = excluded.delivery_text, seller = excluded.seller,
-        shop_rating = coalesce(excluded.shop_rating, kb_offers.shop_rating), shop_reviews = coalesce(excluded.shop_reviews, kb_offers.shop_reviews),
-        last_seen_at = now(), gone = false
-      returning id`;
-    const offerId = row[0].id as string;
-    const changed = !prev.length || Number(prev[0].total) !== total;
-    // Verlauf: bei Preisänderung oder spätestens alle 24h ein Stützpunkt
-    const recent = changed ? [] : await sql`select 1 from kb_price_history where offer_id = ${offerId} and observed_at > now() - interval '24 hours' limit 1`;
-    if (changed || !recent.length) {
-      if (changed && prev.length) changes++;
-      await sql`insert into kb_price_history (product_id, user_id, offer_id, series, shop, condition, total, in_stock)
-                values (${l.product_id}, ${l.user_id}, ${offerId}, 'offer', ${o.shop}, ${o.condition}, ${total}, ${o.inStock ?? null})`;
+  const hist = [];
+  for (const r of rows) {
+    const p = prev.get(r.offer_key);
+    const changed = !p || Number(p.total) !== r.total;
+    const stale = !p?.last_hist || Date.now() - new Date(p.last_hist).getTime() > 24 * 3600_000;
+    if (changed && p) changes++;
+    if (changed || stale) {
+      hist.push({ product_id: l.product_id, user_id: l.user_id, offer_id: idByKey.get(r.offer_key) ?? null, series: 'offer',
+        shop: r.shop, condition: r.condition, total: r.total, in_stock: r.in_stock });
     }
   }
+  if (hist.length) await sql`insert into kb_price_history ${sql(hist)}`;
   // Angebote, die nicht mehr auftauchen, als verschwunden markieren
-  if (keys.length) {
-    await sql`update kb_offers set gone = true where listing_id = ${l.id} and not (offer_key = any(${keys})) and not gone`;
-  } else {
-    await sql`update kb_offers set gone = true where listing_id = ${l.id} and not gone`;
-  }
-  return { offers: offers.length, changes };
+  await sql`update kb_offers set gone = true where listing_id = ${l.id} and not (offer_key = any(${rows.map((r) => r.offer_key)})) and not gone`;
+  return { offers: rows.length, changes };
 }
