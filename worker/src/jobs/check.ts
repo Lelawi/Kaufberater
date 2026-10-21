@@ -135,13 +135,14 @@ async function saveOffers(l: DueListing, offersIn: OfferData[]) {
       last_seen_at = now(), gone = false
     returning id, offer_key`;
   const idByKey = new Map(saved.map((r) => [r.offer_key as string, r.id as string]));
-  // Verlauf: bei Preisänderung oder spätestens alle 24h ein Stützpunkt
+  // Verlauf: bei Preisänderung und einmal pro Tag ein Stützpunkt
   let changes = 0;
   const hist = [];
   for (const r of rows) {
     const p = prev.get(r.offer_key);
     const changed = !p || Number(p.total) !== r.total;
-    const stale = !p?.last_hist || Date.now() - new Date(p.last_hist).getTime() > 24 * 3600_000;
+    // mindestens ein Eintrag je Angebot und Kalendertag – sonst stimmt der Tagestiefstpreis im Diagramm nicht
+    const stale = !p?.last_hist || berlinDay(new Date(p.last_hist)) !== berlinDay(new Date());
     if (changed && p) changes++;
     if (changed || stale) {
       hist.push({ product_id: l.product_id, user_id: l.user_id, offer_id: idByKey.get(r.offer_key) ?? null, series: 'offer',
@@ -168,3 +169,5 @@ async function importHistory(l: DueListing, hist: { date: string; price: number 
   }));
   if (rows.length) await sql`insert into kb_price_history ${sql(rows)}`;
 }
+
+function berlinDay(d: Date) { return d.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }); }
