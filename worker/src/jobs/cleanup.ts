@@ -6,7 +6,7 @@ import { IS_HOME } from '../adapters/registry.ts';
 export async function cleanup() {
   const sql = await db();
   const a = await sql`delete from kb_debug where created_at < now() - interval '2 days'`;
-  const b = await sql`delete from kb_runs where started_at < now() - interval '14 days'`;
+  const b = await sql`delete from kb_runs where started_at < now() - interval '40 days'`;
   const c = await sql`delete from kb_alerts where created_at < now() - interval '180 days' and read_at is not null`;
   // Verlauf älter als 60 Tage: nur ein Punkt pro Angebot und Tag behalten (der niedrigste)
   const d = await sql`
