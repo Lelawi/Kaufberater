@@ -430,6 +430,13 @@ async function viewProduct(id) {
     await sb.from('kb_listings').update({ rejected: false, active: true, error_count: 0, next_check_at: new Date().toISOString() }).eq('id', b.dataset.unreject);
     route();
   }));
+  view.querySelectorAll('[data-addalt]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    const { data, error } = await sb.from('kb_products').insert({ name: b.dataset.addalt, window_start: p.window_start, window_end: p.window_end,
+      window_type: p.window_type, include_refurb: p.include_refurb, want_alternative: false, notes: `Alternative zu ${p.name}` }).select('id').single();
+    if (error) { b.disabled = false; return toast(error.message); }
+    toast('Wird jetzt auch beobachtet'); location.hash = '#/p/' + data.id;
+  }));
   document.getElementById('addL').addEventListener('submit', async (e) => {
     e.preventDefault();
     const { error } = await sb.rpc('kb_add_listing', { p_product: id, p_url: document.getElementById('lurl').value.trim() });
@@ -533,7 +540,8 @@ function analysisDetails(a) {
     ${events.length ? html`<h3 style="margin-top:16px">Aktionstage im Zeitraum</h3><ul class="prose">${events.map((e) => html`<li><strong>${e.name}</strong>${e.date ? ' (' + e.date + ')' : ''}${e.expected ? ': ' + e.expected : ''}</li>`)}</ul>` : ''}
     ${variants.length ? html`<h3 style="margin-top:16px">Gleiches Gerät, andere Namen</h3><ul class="prose">${variants.map((v) => html`<li><strong>${v.model}</strong>${v.note ? ': ' + v.note : ''}</li>`)}</ul>` : ''}
     ${a.successor ? html`<h3 style="margin-top:16px">Nachfolger</h3><p class="prose">${a.successor.name ? html`<strong>${a.successor.name}</strong>: ` : ''}${a.successor.status ?? ''} ${a.successor.effect ?? ''}</p>` : ''}
-    ${alts.length ? html`<h3 style="margin-top:16px">Alternativen</h3><ul class="prose">${alts.map((x) => html`<li><strong>${x.name}</strong>${x.price ? ' – ca. ' + fmtEur0(x.price) : ''}${x.why ? ': ' + x.why : ''}${x.tradeoffs ? html`<br><span class="muted">Abstriche: ${x.tradeoffs}</span>` : ''}</li>`)}</ul>` : ''}
+    ${alts.length ? html`<h3 style="margin-top:16px">Alternativen</h3><ul class="prose">${alts.map((x) => html`<li><strong>${x.name}</strong>${x.price ? ' – ca. ' + fmtEur0(x.price) : ''}${x.why ? ': ' + x.why : ''}${x.tradeoffs ? html`<br><span class="muted">Abstriche: ${x.tradeoffs}</span>` : ''}
+      <br><button class="btn small ghost" style="margin-top:6px" data-addalt="${x.name}">Auch beobachten</button></li>`)}</ul>` : ''}
     ${cashback.length || vouchers.length ? html`<h3 style="margin-top:16px">Cashback & Gutscheine</h3><ul class="prose">${[...cashback, ...vouchers].map((c) => html`<li>${c.label ?? c.name ?? ''}${c.value ? ': ' + c.value : ''}${c.code ? html` – Code <strong>${c.code}</strong>` : ''}${c.until ? ' (bis ' + c.until + ')' : ''}${c.url ? html` <a href="${safeUrl(c.url)}" target="_blank" rel="noopener">Details</a>` : ''}</li>`)}</ul>` : ''}
     ${sources.length ? html`<h3 style="margin-top:16px">Quellen</h3><ol class="sources">${sources.map((s) => html`<li><a href="${safeUrl(s.url)}" target="_blank" rel="noopener">${s.title ?? s.url}</a></li>`)}</ol>` : ''}
   </section>`;
