@@ -367,7 +367,7 @@ async function viewProduct(id) {
     <div class="btn-row"><button class="btn small" id="saveThr">Schwellen speichern</button>${p.thresholds_manual ? html`<button class="btn small ghost" id="autoThr">Wieder der Analyse überlassen</button>` : ''}</div>
   </section>
 
-  <section class="panel"><h2>Preisverlauf</h2>${raw(priceChart(seriesR.data ?? [], p, a?.price_history))}</section>
+  <section class="panel"><h2>Preisverlauf</h2>${raw(priceChart(seriesR.data ?? [], p, a?.price_history))}${seriesLow(seriesR.data ?? [])}</section>
 
   <section class="panel"><h2>Angebote Neuware <span class="muted" style="font-weight:400">${newOffers.length}</span></h2>
     ${newOffers.length ? offerTable(newOffers) : html`<p class="muted">Noch keine.</p>`}</section>
@@ -846,6 +846,15 @@ function b64ToBytes(s) {
   const pad = '='.repeat((4 - (s.length % 4)) % 4);
   const b = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
   return Uint8Array.from(b, (c) => c.charCodeAt(0));
+}
+
+/** Tiefstpreis Neuware im Verlauf (mit Datum) – ab 30 Tagen Daten */
+function seriesLow(rows) {
+  const pts = rows.filter((r) => r.min_new != null);
+  if (pts.length < 30) return '';
+  const low = pts.reduce((m, r) => (Number(r.min_new) < Number(m.min_new) ? r : m));
+  const months = Math.max(1, Math.round((Date.now() - new Date(pts[0].day)) / (30.4 * 864e5)));
+  return html`<p class="hint" style="margin-top:8px">Tiefstpreis Neuware der letzten ${months} Monate: <strong>${fmtEur(Number(low.min_new))}</strong> am ${fmtDate(low.day, { day: 'numeric', month: 'long' })} (laut Preisvergleich, kann ein kurzer Einzelpreis gewesen sein).</p>`;
 }
 
 void esc; void fmtEur0;
