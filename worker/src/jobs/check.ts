@@ -6,6 +6,7 @@ import { toQuery } from '../products.ts';
 import { blockedSources, recordSourceResult } from './health.ts';
 import type { OfferData } from '../adapters/types.ts';
 import { plausibleOffers } from '../util/plausible.ts';
+import { hotWindow } from '../util/events.ts';
 
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
@@ -41,6 +42,8 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
     bySource.set(l.source, arr);
   }
   const stats = { listings: 0, ok: 0, errors: 0, offers: 0, priceChanges: 0 };
+  // In der heißen Phase höchstens 25 Minuten bis zur nächsten Abfrage
+  const cap = hotWindow() ? 25 : 100_000;
   await Promise.all([...bySource.entries()].map(async ([sourceKey, listings]) => {
     const adapter = sourceByKey(sourceKey);
     if (!adapter) return;
@@ -63,7 +66,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
         }
         stats.offers += r.offers; stats.priceChanges += r.changes; stats.ok++;
         await sql`update kb_listings set last_checked_at = now(), last_ok_at = now(), last_error = null, error_count = 0,
-                   next_check_at = now() + make_interval(mins => check_interval_minutes) where id = ${l.id}`;
+                   next_check_at = now() + make_interval(mins => least(check_interval_minutes, ${cap})) where id = ${l.id}`;
         await recordSourceResult(sourceKey, true);
       } catch (e) {
         stats.errors++;

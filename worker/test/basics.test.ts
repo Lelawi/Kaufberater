@@ -104,3 +104,13 @@ test('Mietangebote und Ausreißer aussortieren', () => {
   assert.equal(isRental({ shop: 'expert.de', title: 'LG OLED77G68LW – Payback Punkte sammeln' }), false);
   assert.equal(isRental({ shop: 'otto.de', title: 'LG OLED77G6 – Finanzierung ab 89 € pro Monat', price: 2799 }, 2800), false);
 });
+
+import { hotWindow } from '../src/util/events.ts';
+test('Heiße Phase (Black Week, Singles Day)', () => {
+  assert.equal(hotWindow(new Date('2026-10-21T12:00:00Z')), null);
+  assert.equal(hotWindow(new Date('2026-11-11T09:00:00Z')), 'Singles Day');
+  assert.equal(hotWindow(new Date('2026-11-22T12:00:00Z')), null);
+  assert.equal(hotWindow(new Date('2026-11-23T08:00:00Z')), 'Black Week');   // Montag vor BF (27.11.)
+  assert.equal(hotWindow(new Date('2026-12-01T20:00:00Z')), 'Black Week');   // Dienstag nach Cyber Monday
+  assert.equal(hotWindow(new Date('2026-12-02T12:00:00Z')), null);
+});

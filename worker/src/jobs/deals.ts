@@ -6,13 +6,16 @@ import { recordSourceResult } from './health.ts';
 import { createAlert } from './alerts.ts';
 import { fmtEur } from '../util/money.ts';
 import { IMPORT_MARKET } from '../util/plausible.ts';
+import { hotWindow } from '../util/events.ts';
 
 export async function runDeals(deadline: number, opts: { productId?: string; portals?: string[] } = {}) {
   const sql = await db();
+  // In der heißen Phase (Black Week, Singles Day) Deal-Portale alle 15 statt 50 Minuten abfragen
+  const everyMin = hotWindow() ? 15 : 50;
   const products = await sql<ProductRow[]>`
     select * from kb_products where status = 'watching'
       and (${opts.productId ?? null}::uuid is null or id = ${opts.productId ?? null}::uuid)
-      and (${opts.productId ?? null}::uuid is not null or deals_checked_at is null or deals_checked_at < now() - interval '50 minutes')
+      and (${opts.productId ?? null}::uuid is not null or deals_checked_at is null or deals_checked_at < now() - make_interval(mins => ${everyMin}))
     order by deals_checked_at nulls first
     limit ${Number(process.env.KB_DEALS_PER_RUN ?? 20)}`;
   const adapters = DEAL_SOURCES.filter((a) => !opts.portals || opts.portals.includes(a.key));

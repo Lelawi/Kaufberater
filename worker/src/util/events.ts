@@ -25,3 +25,18 @@ export function nextShoppingEvent(now = new Date()): ShoppingEvent | null {
   const e = all[0];
   return e ? { ...e, days: Math.max(0, Math.ceil((+e.date - +now) / 864e5)) } : null;
 }
+
+/**
+ * „Heiße Phase“: Singles Day (11.11.) und die Black Week (Montag vor Black Friday bis Dienstag nach Cyber Monday).
+ * In dieser Zeit wird öfter geprüft, weil gute Deals oft nach wenigen Stunden ausverkauft sind.
+ */
+export function hotWindow(now = new Date()): string | null {
+  const y = now.getUTCFullYear();
+  const bf = shoppingEvents(y).find((e) => e.name === 'Black Friday')!.date;
+  const day = (d: Date, plus: number) => +d + plus * 864e5;
+  const t = +now + 2 * 3600_000;   // grob deutsche Zeit (Tagesgrenzen)
+  const singles = Date.UTC(y, 10, 11);
+  if (t >= singles && t < day(new Date(singles), 1)) return 'Singles Day';
+  if (t >= day(bf, -4) && t < day(bf, 5)) return 'Black Week';
+  return null;
+}
