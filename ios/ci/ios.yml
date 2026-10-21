@@ -4,10 +4,17 @@ name: ios
 # Ohne Secrets wird nur ein Testbuild für den Simulator gemacht (prüft, ob der Code kompiliert).
 on:
   workflow_dispatch:
+    inputs:
+      screenshots:
+        description: 'App im Simulator starten und Bildschirmfotos machen'
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths: ['ios/**', '.github/workflows/ios.yml']
 concurrency: { group: ios, cancel-in-progress: true }
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: macos-15
@@ -26,10 +33,27 @@ jobs:
       - name: Testbuild (Simulator, ohne Signatur)
         run: |
           cd ios
-          xcodebuild -project Kaufberater.xcodeproj -scheme Kaufberater -sdk iphonesimulator \
+          xcodebuild -project Kaufberater.xcodeproj -scheme Kaufberater -sdk iphonesimulator -derivedDataPath build/dd \
             -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build > build.log 2>&1 \
             || { grep -E " error: |error:" build.log | sort -u | head -30 | sed 's/^/::error::/'; tail -40 build.log; exit 1; }
           echo "::notice::Testbuild erfolgreich"
+      - name: Im Simulator ausprobieren (Bildschirmfotos)
+        if: inputs.screenshots
+        run: |
+          DEV=$(xcrun simctl list devices available | grep -E "iPhone 1[5-9]( Pro)? \(" | head -1 | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          echo "Gerät: $DEV"
+          xcrun simctl boot "$DEV"; xcrun simctl bootstatus "$DEV" -b >/dev/null
+          APP=$(find ios/build/dd/Build/Products -name 'Kaufberater.app' -maxdepth 3 | head -1)
+          xcrun simctl install "$DEV" "$APP"
+          mkdir -p shots
+          xcrun simctl launch "$DEV" de.lelawi.kaufberater; sleep 20
+          xcrun simctl io "$DEV" screenshot shots/1-start.png
+          xcrun simctl openurl "$DEV" "kaufberater://check?u=https%3A%2F%2Fwww.example.com%2Fprodukt"; sleep 8
+          xcrun simctl io "$DEV" screenshot shots/2-deeplink.png
+          xcrun simctl ui "$DEV" appearance dark; sleep 4
+          xcrun simctl io "$DEV" screenshot shots/3-dunkel.png
+          cd shots && git init -q -b shots && git add -A && git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm shots
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" shots:shots
       - name: Apple-Account vorbereiten
         if: env.HAS_ASC == 'true'
         env:
