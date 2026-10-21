@@ -1,5 +1,5 @@
 // Fällige Abfrageziele abrufen, Angebote speichern, Preisverlauf fortschreiben
-import { db } from '../db.ts';
+import { db, debugLog } from '../db.ts';
 import { sourceByKey, availableHere, IS_HOME } from '../adapters/registry.ts';
 import { needsHomeUrl } from '../adapters/shops.ts';
 import { toQuery } from '../products.ts';
@@ -92,6 +92,10 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
                  where id = ${l.id}`;
         if ((e as any).status === 404) await sql`update kb_listings set active = false where id = ${l.id}`;
         await recordSourceResult(sourceKey, false, msg);
+        if ((e as any).body !== undefined) {
+          const be = e as any;
+          await debugLog('gesperrt:' + sourceKey, { url: be.url, status: be.status, headers: { response: be.headers, sent: be.sentHeaders }, body: be.body }).catch(() => {});
+        }
         if (/blockiert/.test(msg)) return; // Quelle für diesen Lauf aufgeben
       }
     }

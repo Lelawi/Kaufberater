@@ -16,6 +16,8 @@ const LANG: Record<string, string> = {
 
 export class BlockedError extends Error {
   status: number;
+  /** Zur Fehlersuche: Anfang der Sperrseite und Antwort-Kopfzeilen */
+  body?: string; headers?: Record<string, string>; url?: string; sentHeaders?: Record<string, string>;
   constructor(msg: string, status: number) { super(msg); this.name = 'BlockedError'; this.status = status; }
 }
 export class HttpError extends Error {
@@ -132,7 +134,12 @@ export async function fetchPage(url: string, opts: FetchOpts = {}): Promise<Page
           continue;
         }
         const text = await res.text();
-        if (looksBlocked(res.status, text)) throw new BlockedError(`blockiert (${res.status}) bei ${u.host}`, res.status);
+        if (looksBlocked(res.status, text)) {
+          const be = new BlockedError(`blockiert (${res.status}) bei ${u.host}`, res.status);
+          be.body = text.slice(0, 4000); be.url = current; be.headers = Object.fromEntries(res.headers.entries());
+          be.sentHeaders = { ...headers, Cookie: headers.Cookie ? '(gesetzt)' : '' };
+          throw be;
+        }
         if (res.status >= 400 && !(opts.allowStatus ?? []).includes(res.status)) {
           throw new HttpError(`HTTP ${res.status} bei ${current}`, res.status);
         }
