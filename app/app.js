@@ -11,13 +11,14 @@ if (NATIVE) {
 const view = document.getElementById('view');
 const tabs = document.getElementById('tabs');
 let session = null;
+let member = null;   // freigeschaltet? (wird beim ersten Aufruf geprüft)
 
 // ---------- Start ----------
 if ('serviceWorker' in navigator && !NATIVE) navigator.serviceWorker.register('sw.js').catch(() => {});
 session = (await sb.auth.getSession()).data.session;
 sb.auth.onAuthStateChange((ev, s) => {
   if (ev === 'INITIAL_SESSION') return;
-  const was = !!session; session = s;
+  const was = !!session; session = s; member = null;
   if (!!s !== was) { route(); if (s) syncNativeToken(); }
 });
 syncNativeToken();
@@ -42,6 +43,10 @@ async function route() {
   const [path, qs] = h.split('?');
   const [, a, b] = path.split('/');
   const params = new URLSearchParams(qs ?? '');
+  if (a !== 'settings' && !(await isMember())) {
+    setTab(a === 'settings' ? 'settings' : 'list');
+    return render(html`<div class="empty"><h2>Noch nicht freigeschaltet</h2><p>Der Kaufberater ist ein privates Projekt. Dein Konto (${session.user.email}) ist dafür noch nicht freigeschaltet.</p><a class="btn ghost" href="#/settings">Einstellungen / Abmelden</a></div>`);
+  }
   try {
     if (!a) { setTab('list'); await viewList(); }
     else if (a === 'add') { setTab('list'); await viewEdit(null, params); }
@@ -57,6 +62,12 @@ async function route() {
   }
   refreshBadge();
   window.scrollTo(0, 0);
+}
+
+/** Darf dieses Konto den Kaufberater nutzen? (Freischaltliste kb_members) */
+async function isMember() {
+  if (member === null) { const { data, error } = await sb.rpc('kb_is_member'); member = error ? true : data !== false; }
+  return member;
 }
 
 async function refreshBadge() {

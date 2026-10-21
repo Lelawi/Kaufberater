@@ -20,6 +20,13 @@ Ablauf eines Worker-Durchlaufs (`worker/src/run.ts`):
 5. **Vorläufige Schwellen** (`jobs/autothresholds.ts`): sofort aus Bestpreis + früheren Deals, bis die Tiefenanalyse übernimmt.
 6. **Zustellen** (`jobs/alerts.ts`): Web-Push (und optional E-Mail).
 
+## Schutzmechanismen
+- **Freischaltung:** Nur Konten in `kb_members` dürfen Produkte/Schnellchecks anlegen (Anmeldung ist mit MarsiHome geteilt). Neues Konto freischalten: `insert into kb_members (user_id) values ('<uuid>')`.
+- **Unplausible Angebote** (`util/plausible.ts`): Miet-/Abo-Shops (Grover …) und Preise < 35 % des Mittelwerts von wenig bekannten Shops fliegen raus; Deals von Import-Marktplätzen (AliExpress …) werden markiert und nicht für Schwellen genutzt.
+- **Leere Preisvergleich-Seiten:** Liefert idealo/billiger plötzlich keine Angebote, obwohl vorher welche da waren, bleibt der Stand erhalten (Wiederholung nach 20 Min., Seite landet in `kb_debug` mit Tag `idealo-leer`).
+- **Heiße Phase** (`util/events.ts` / `kb_hot_window()`): Singles Day und Black Week → Abfragen alle 25–30 Min., Deal-Portale alle 15 Min.; Ersatz-Taktgeber `kb_backup_tick` (pg_cron :22/:52) mit Freiminuten-Bremse (Hochrechnung ≤ 1.850 Min.). Am Sonntag vor der Black Week wird die Tiefenanalyse automatisch fällig.
+- **Mitteilungen (APNs):** Schlüssel wird beim Einlesen repariert; lehnt Apple ihn ab (403), bleiben die Geräte erhalten und es kommt eine Meldung. `node worker/src/cli.ts apnsprobe` testet die Verbindung zu Apple.
+
 ## Quellen (`worker/src/adapters/`)
 
 | Quelle | Datei | Läuft auf |
