@@ -56,6 +56,11 @@ scripts/deploy-app.sh                        # App veröffentlichen
 - Supabase Vault `kb_github_token`: GitHub-Schlüssel (nur „Actions“ für dieses Repo), damit die Datenbank den Worker sofort starten kann.
 - Push-Schlüssel (VAPID) liegen in `kb_worker_config`.
 
+## iPhone-App (`ios/`)
+- Gebaut im öffentlichen Repo `Kaufberater-app` (Workflow `ios`): ohne Apple-Secrets nur Testbuild + Probe-Archiv, mit Secrets Signieren + TestFlight-Upload.
+- Schalter `share_ext=true`: baut zusätzlich den Eintrag im Teilen-Menü (`project-share.yml`, Ziel `KaufberaterShare`). Die Erweiterung übergibt per lokaler Mitteilung an die App (Erweiterungen dürfen Apps nicht direkt öffnen).
+- Brücke Web-App ↔ iPhone: `window.kbNative.call('push-status' | 'push-enable' | 'push-token' | 'badge' | 'open')`, `kbNative.share` = Erweiterung vorhanden.
+
 ## Raspberry Pi
 
 `home/install.sh` auf dem Pi ausführen → Worker läuft alle 10 Minuten mit Heimanschluss (dann auch Amazon, Geizhals, MediaMarkt …).
