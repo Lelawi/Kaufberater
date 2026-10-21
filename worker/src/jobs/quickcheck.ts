@@ -14,8 +14,11 @@ import { IS_HOME } from '../adapters/registry.ts';
 
 export async function runQuickChecks(deadline: number) {
   const sql = await db();
-  const jobs = await sql`select * from kb_quick_checks where status = 'queued' order by created_at limit 5`;
   let done = 0;
+  // Mehrmals nachsehen: was während des Laufs dazukommt, wird gleich mit erledigt (sonst wartet es bis zum nächsten Lauf)
+  for (let round = 0; round < 4 && Date.now() < deadline; round++) {
+  const jobs = await sql`select * from kb_quick_checks where status = 'queued' order by created_at limit 5`;
+  if (!jobs.length) break;
   for (const j of jobs) {
     if (Date.now() > deadline) break;
     await sql`update kb_quick_checks set status = 'running' where id = ${j.id}`;
@@ -30,6 +33,9 @@ export async function runQuickChecks(deadline: number) {
       await sql`update kb_quick_checks set status = 'failed', done_at = now(), summary = ${'Konnte nicht geprüft werden: ' + (e as Error).message} where id = ${j.id}`;
     }
   }
+  }
+  // Hängengebliebene (Lauf abgebrochen) wieder einreihen
+  await sql`update kb_quick_checks set status = 'queued' where status = 'running' and created_at < now() - interval '20 minutes' and done_at is null`;
   return { done };
 }
 
