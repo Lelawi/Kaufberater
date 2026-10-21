@@ -693,6 +693,8 @@ async function viewSettings() {
       </form></details>
   </section>
   <section class="panel flat"><h2>Angebote aus anderen Apps prüfen</h2>
+    ${NATIVE?.share ? html`<p>In Safari, Amazon & Co. auf <strong>Teilen</strong> tippen → <strong>Kaufberater</strong> (falls nicht sichtbar: ganz rechts „Mehr“ und Kaufberater einschalten). Optional den Preis eintragen, dann <em>Ist das ein Deal?</em> – kurz darauf erscheint eine Mitteilung, die den Schnellcheck öffnet.</p>
+    <details class="more"><summary>Alternative: Kurzbefehl</summary>` : ''}
     <p>Mit einem iPhone-Kurzbefehl erscheint „Ist das ein Deal?“ im <strong>Teilen</strong>-Menü von Safari, Amazon & Co.:</p>
     <ol class="prose" style="padding-left:20px">
       <li>App <strong>Kurzbefehle</strong> öffnen → <strong>+</strong> → oben auf den Namen tippen: „Ist das ein Deal?“.</li>
@@ -702,6 +704,7 @@ async function viewSettings() {
       <li>Aktion <strong>URLs öffnen</strong> hinzufügen. Fertig.</li>
     </ol>
     <p class="hint">${NATIVE ? 'Der Kurzbefehl öffnet direkt die Kaufberater-App.' : 'Der Link öffnet sich in Safari. Melde dich dort einmal mit demselben Konto an.'}</p>
+    ${NATIVE?.share ? raw('</details>') : ''}
   </section>
   <section class="panel flat"><h2>Quellen</h2>
     <p class="hint" style="margin-top:-6px">Letzter Durchlauf: ${ago(rR.data?.[0]?.finished_at ?? rR.data?.[0]?.started_at)}. Amazon, MediaMarkt, Geizhals und weitere Shops kommen dazu, sobald der Heim-Server (Raspberry Pi) läuft.</p>

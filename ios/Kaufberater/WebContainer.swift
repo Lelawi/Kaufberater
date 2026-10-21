@@ -13,11 +13,13 @@ struct WebContainer: UIViewRepresentable {
         config.allowsInlineMediaPlayback = true
         let ucc = WKUserContentController()
         // Brücke für die Web-App: window.kbNative.call('push-enable') usw.
+        // Ist die Teilen-Menü-Erweiterung eingebaut? (dann zeigt die Web-App die einfache Anleitung)
+        let hasShare = Bundle.main.builtInPlugInsURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("KaufberaterShare.appex").path) } ?? false
         let bridge = """
         (function () {
           const pending = {}; let seq = 0;
           window.kbNative = {
-            platform: 'ios', version: '\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1")',
+            platform: 'ios', version: '\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1")', share: \(hasShare),
             call(type, data) {
               return new Promise((resolve, reject) => {
                 const id = ++seq; pending[id] = { resolve, reject };
