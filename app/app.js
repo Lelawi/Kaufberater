@@ -286,6 +286,11 @@ async function viewProduct(id) {
     sb.from('kb_listings').select('id,source,country,url,title,condition,active,rejected,last_ok_at,last_error,discovered_by,match_score').eq('product_id', id).order('source'),
     sb.from('kb_alerts').select('id').eq('product_id', id).is('read_at', null),
   ]);
+  const [vouchersR, ratesR, myVouchersR] = await Promise.all([
+    sb.from('kb_shop_vouchers').select('shop,title,url,last_seen_at').eq('expired', false).order('last_seen_at', { ascending: false }).limit(300),
+    sb.from('kb_cashback_rates').select('portal,shop,rate_text'),
+    sb.from('kb_vouchers').select('kind,label').eq('active', true),
+  ]);
   if (error) throw error;
   if (alertsR.data?.length) sb.from('kb_alerts').update({ read_at: new Date().toISOString() }).in('id', alertsR.data.map((a) => a.id)).then(refreshBadge);
   const offers = offersR.data ?? [];
@@ -344,6 +349,8 @@ async function viewProduct(id) {
     ${refurb.length ? offerTable(refurb, true) : html`<p class="muted">Noch keine gefunden.</p>`}</section>` : ''}
 
   <section class="panel"><h2>Deals aus der Community</h2>${dealList(dealsR.data ?? [])}</section>
+
+  ${voucherSection(p, newOffers, vouchersR.data ?? [], ratesR.data ?? [], myVouchersR.data ?? [])}
 
   ${a ? analysisDetails(a) : ''}
 
@@ -477,6 +484,33 @@ function offerTable(list, showCondition = false) {
   return html`<table class="table offers">${head}<tbody>${list.slice(0, SHOW).map(rowHtml)}</tbody></table>
     ${list.length > SHOW ? html`<details class="more"><summary>Alle ${list.length} Angebote zeigen</summary>
       <table class="table offers"><tbody>${list.slice(SHOW, 60).map((o, i) => rowHtml(o, i + SHOW))}</tbody></table></details>` : ''}`;
+}
+
+/** Gutscheine & Aktionen der Händler, die gerade vorne liegen (von mydealz, täglich aktualisiert) */
+function voucherSection(p, offers, vouchers, rates, mine) {
+  const top = offers.slice(0, 6);
+  const brand = String(p.brand || p.name.split(' ')[0] || '').toLowerCase();
+  const general = /gutschein|coupon|cashback auf deine einkäufe|versandkostenfrei|gratisversand|neukunden|auf alles|gesamte sortiment|mehrwertsteuer/i;
+  const rows = [];
+  for (const o of top) {
+    const n = normShop(o.shop);
+    for (const v of vouchers.filter((x) => n && (x.shop === n || n.startsWith(x.shop) || x.shop.startsWith(n)))) {
+      const t = v.title.toLowerCase();
+      if (!(general.test(t) || (brand.length > 1 && t.includes(brand)))) continue;
+      if (/cashback auf deine einkäufe/i.test(t)) continue;   // steht unten als Cashback
+      if (!rows.some((r) => r.v.title === v.title)) rows.push({ o, v });
+    }
+  }
+  const cb = top.map((o) => ({ o, r: rates.find((r) => normShop(o.shop).startsWith(r.shop) || r.shop.startsWith(normShop(o.shop))) })).filter((x) => x.r);
+  const hasMydealzCb = mine.some((m) => m.kind === 'cashback' && /mydealz/i.test(m.label));
+  if (!rows.length && !cb.length) return '';
+  return html`<section class="panel"><h2>Gutscheine & Aktionen</h2>
+    <p class="hint" style="margin-top:-6px">Bei den Händlern, die gerade am günstigsten sind (aus den geprüften Gutscheinseiten von mydealz).</p>
+    ${rows.length ? html`<ul class="list-plain">${rows.slice(0, 8).map(({ o, v }) => html`<li style="align-items:flex-start"><div><strong>${o.shop}</strong><div>${v.title}</div></div>
+      <a class="btn small ghost" href="${safeUrl(v.url)}" target="_blank" rel="noopener">Ansehen</a></li>`)}</ul>` : ''}
+    ${cb.length ? html`<p style="margin-top:12px"><strong>Cashback:</strong> ${cb.map(({ o, r }) => `${o.shop} ${r.rate_text}`).join(' · ')}</p>
+      ${hasMydealzCb ? html`<p class="hint">Wird bei „Für dich“ schon eingerechnet.</p>` : html`<p class="hint">Wenn du ein mydealz-Konto hast, trag unter Einstellungen → Gutscheine & Zugänge „mydealz Cashback“ (Art: Cashback-Konto) ein – dann rechnet die App das Cashback in den Endpreis ein.</p>`}` : ''}
+  </section>`;
 }
 
 function dealList(deals) {

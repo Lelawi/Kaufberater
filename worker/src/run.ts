@@ -9,6 +9,7 @@ import { runQuickChecks } from './jobs/quickcheck.ts';
 import { cleanup } from './jobs/cleanup.ts';
 import { runAutoThresholds } from './jobs/autothresholds.ts';
 import { runDigest } from './jobs/digest.ts';
+import { runVouchers } from './jobs/vouchers.ts';
 import { stats as httpStats } from './util/http.ts';
 
 /** arg: "all" (Standard), "checks", "deals", "discovery", "quick", "product:<uuid>" */
@@ -33,6 +34,7 @@ export async function runAll(arg = '') {
     if (['all', 'deals', 'product'].includes(mode)) await step('deals', () => runDeals(deadline, { productId }));
     if (mode === 'quick') { await step('quickchecks', () => runQuickChecks(deadline)); await step('alerts', () => deliverAlerts()); return; }
     await step('quickchecks', () => runQuickChecks(deadline));
+    if (mode === 'all') await step('vouchers', () => runVouchers());
     await step('evaluate', () => runEvaluate({ productId }));
     // Neue Produkte bekommen sofort vorläufige Schwellen; danach noch einmal bewerten, damit Treffer gleich gemeldet werden
     await step('autothresholds', async () => { const r = await runAutoThresholds({ productId }); if (r.set) await runEvaluate({ productId }); return r; });
