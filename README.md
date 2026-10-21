@@ -33,18 +33,25 @@ Ablauf eines Worker-Durchlaufs (`worker/src/run.ts`):
 - **Mitteilungen (APNs):** Schlüssel wird beim Einlesen repariert; lehnt Apple ihn ab (403), bleiben die Geräte erhalten und es kommt eine Meldung. `node worker/src/cli.ts apnsprobe` testet die Verbindung zu Apple.
 
 ## Quellen (`worker/src/adapters/`)
+Stand der Erreichbarkeit (geprüft 21.10.2026 von GitHub-Actions aus): siehe Tabelle. Blockierte Shops kommen meist trotzdem über die Preisvergleiche herein.
 
 | Quelle | Datei | Läuft auf |
 |---|---|---|
 | idealo.de (hunderte Händler) | `idealo.ts` | GitHub + Pi |
-| billiger.de | `billiger.ts` | GitHub + Pi |
+| billiger.de (+ ca. 6 Monate Preisverlauf) | `billiger.ts` | GitHub + Pi |
+| CHECK24 Preisvergleich (inkl. Amazon, MediaMarkt, Otto, Galaxus, Kaufland, Cyberport …; + Preisverlauf). Produktseiten antworten gelegentlich mit 403 → 30 Min. Pause, dann erneut | `check24.ts` | GitHub + Pi |
+| Shops mit eigener Suche: Coolblue, Alternate, Berlet, Medimax, jacob, technikdirekt, BAUR, Quelle, voelkner, rebuy (gebraucht), HiFi-Profis (Shopify) | `shopconfigs.ts` (Baustein `searchshops.ts`) | GitHub + Pi |
+| eBay (offizielle Browse-API, nur mit `EBAY_APP_ID`/`EBAY_CERT_ID`) | `ebay.ts` | GitHub + Pi |
 | Pepper-Portale (DE/AT/FR/ES/IT) | `pepper.ts` | GitHub + Pi |
-| Shop-Seiten mit Produktdaten (expert, Galaxus, Coolblue, Hersteller …) | `shops.ts` | GitHub + Pi |
+| Einzelne Shop-Seiten mit Produktdaten (Links aus Analyse/Eintragen) | `shops.ts` | GitHub + Pi |
 | Amazon DE/FR/IT/ES/NL | `amazon.ts` | nur Pi (blockt Rechenzentren) |
 | Geizhals | `geizhals.ts` | nur Pi |
-| MediaMarkt, Saturn, Otto, Cyberport … (Shop-Seiten) | `shops.ts` | nur Pi |
+| MediaMarkt, Saturn, Otto, Cyberport, Kaufland, Galaxus … (Shop-Seiten) | `shops.ts` | nur Pi |
 
-Neue Quelle: Datei in `adapters/` mit `search()` (Produkt finden) und `fetch()` (Angebote lesen), in `registry.ts` eintragen.
+Bewusst nicht genutzt: Proxy-Dienste, Captcha-Löser, Tarn-Browser (Umgehung von Bot-Schutz). Amazon-API (Creators API) braucht 10 Partner-Verkäufe/30 Tage – für Privatnutzung nicht erreichbar; Keepa-API kostet Geld.
+Weitere Ideen (Recherche 21.10.): Keepa/camelcamelcamel-Preisalarme als RSS, Geizhals-/idealo-Preisalarm-Mails per IMAP auslesen, Klarna-Preisvergleich (nur mit Browser).
+
+Neuer Shop mit Suche: Eintrag in `shopconfigs.ts` (Such-Adresse + Auswertung). Neue eigene Quelle: Datei in `adapters/` mit `search()` und `fetch()`, in `registry.ts` eintragen.
 
 ## Befehle
 
