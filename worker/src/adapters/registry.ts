@@ -7,6 +7,7 @@ import { billigerAdapter } from './billiger.ts';
 import { amazonAdapters } from './amazon.ts';
 import { pepperAdapters } from './pepper.ts';
 import { refurbedAdapter } from './refurbed.ts';
+import { ebayAdapter, ebayConfigured } from './ebay.ts';
 
 export const SOURCES: SourceAdapter[] = [
   ...geizhalsAdapters,
@@ -14,6 +15,8 @@ export const SOURCES: SourceAdapter[] = [
   billigerAdapter,
   ...amazonAdapters,
   refurbedAdapter,
+  // eBay nur mit Zugangsschlüsseln (GitHub-Secrets EBAY_APP_ID / EBAY_CERT_ID)
+  ...(ebayConfigured() ? [ebayAdapter] : []),
   ...shopSources,
 ];
 

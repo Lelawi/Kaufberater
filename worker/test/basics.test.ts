@@ -136,3 +136,17 @@ test('Shop-Suche: Treffer aus JSON-LD und Links', () => {
   const links = `<a href="/product/lg-oled77g68lw-123.html" title="LG OLED77G68LW 77 Zoll">x</a><a href="/hilfe">Hilfe und Kontakt</a>`;
   assert.deepEqual(hitsFromLinks(links, 'https://shop.de', /\/product\//).map((h) => h.url), ['https://shop.de/product/lg-oled77g68lw-123.html']);
 });
+
+import { ebayOffers, ebayCondition } from '../src/adapters/ebay.ts';
+test('eBay-Angebote auswerten', () => {
+  const items = [
+    { itemId: 'v1|1|0', title: 'LG OLED77G68LW 77 Zoll OLED evo Gallery Neu OVP', itemWebUrl: 'https://www.ebay.de/itm/1', conditionId: '1000', price: { value: '2399.00', currency: 'EUR' }, shippingOptions: [{ shippingCost: { value: '0.00', currency: 'EUR' } }], seller: { feedbackPercentage: '99.6', feedbackScore: 15230 }, buyingOptions: ['FIXED_PRICE'] },
+    { itemId: 'v1|2|0', title: 'Wandhalterung für LG OLED77G68LW', itemWebUrl: 'https://www.ebay.de/itm/2', conditionId: '1000', price: { value: '49.00', currency: 'EUR' } },
+    { itemId: 'v1|3|0', title: 'LG OLED77G68LW generalüberholt', itemWebUrl: 'https://www.ebay.de/itm/3', conditionId: '2010', price: { value: '1999.00', currency: 'EUR' } },
+    { itemId: 'v1|4|0', title: 'LG OLED77G68LW', itemWebUrl: 'https://www.ebay.de/itm/4', conditionId: '1000', price: { value: '2000', currency: 'GBP' } },
+  ];
+  const o = ebayOffers(items as any, { name: 'LG OLED77G6', model: 'OLED77G6' });
+  assert.deepEqual(o.map((x) => [x.offerKey, x.condition, x.price]), [['ebay:v1|1|0', 'new', 2399], ['ebay:v1|3|0', 'refurbished', 1999]]);
+  assert.equal(o[0].shopRating, 5); assert.equal(o[0].shopReviews, 15230); assert.equal(o[0].shipping, 0);
+  assert.equal(ebayCondition('1500'), 'bware'); assert.equal(ebayCondition('3000'), 'used');
+});

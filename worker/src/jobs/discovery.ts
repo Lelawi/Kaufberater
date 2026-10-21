@@ -5,6 +5,7 @@ import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
 import type { Candidate } from '../adapters/types.ts';
 import { variantCodes } from '../util/match.ts';
+import { ebayConfigured } from '../adapters/ebay.ts';
 
 const MIN_SCORE = 0.75;
 const MAX_PER_SOURCE = 3;
@@ -18,6 +19,8 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
       and (discovery_status = 'pending'
            or (discovery_status in ('done','failed') and discovery_at < now() - interval '7 days')
            or ${onlyProductId ?? null}::uuid is not null
+           or (${ebayConfigured()} and not exists (select 1 from kb_listings l where l.product_id = kb_products.id and l.source = 'ebay')
+               and discovery_at < now() - interval '6 hours')
            or (${process.env.KB_RUNNER === 'home'} and not exists (select 1 from kb_listings l where l.product_id = kb_products.id and l.source in ('amazon','geizhals'))
                and discovery_at < now() - interval '6 hours'))
     order by discovery_at nulls first

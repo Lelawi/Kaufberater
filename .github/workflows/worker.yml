@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 15
     env:
       KB_DB_PASSWORD: ${{ secrets.KB_DB_PASSWORD }}
+      EBAY_APP_ID: ${{ secrets.EBAY_APP_ID }}
+      EBAY_CERT_ID: ${{ secrets.EBAY_CERT_ID }}
       ARG: ${{ inputs.arg || 'all' }}
     steps:
       - uses: actions/checkout@v5
