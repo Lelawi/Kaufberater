@@ -95,6 +95,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     const levels: [string, number | null][] = [['instant', p.threshold_instant], ['top', p.threshold_top], ['good', p.threshold_good ?? p.max_price]];
     for (const cand of [best, bestR].filter(Boolean) as typeof enriched) {
       const isRefurb = cand.o.condition !== 'new';
+      // Wunschpreis erreicht → dafür kommt unten eine eigene Meldung, nicht zweimal für dasselbe Angebot melden
+      if (p.max_price && cand.eff <= p.max_price) continue;
       const hit = levels.find(([, t]) => t !== null && cand.eff <= (isRefurb ? t! * 0.9 : t!));
       if (!hit) continue;
       const [level] = hit;
