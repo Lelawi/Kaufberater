@@ -9,6 +9,10 @@ on:
         description: 'App im Simulator starten und Bildschirmfotos machen'
         type: boolean
         default: false
+      share_ext:
+        description: 'Mit Eintrag im Teilen-Menü bauen (Erweiterung)'
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths: ['ios/**', '.github/workflows/ios.yml']
@@ -29,7 +33,9 @@ jobs:
           sudo xcode-select -s "$X"
           xcodebuild -version
       - name: Projekt erzeugen
-        run: brew install xcodegen >/dev/null && cd ios && xcodegen generate
+        run: |
+          brew install xcodegen >/dev/null && cd ios
+          if [ "${{ inputs.share_ext }}" = "true" ]; then xcodegen generate --spec project-share.yml; echo "::notice::Mit Teilen-Menü-Erweiterung"; else xcodegen generate; fi
       - name: Testbuild (Simulator, ohne Signatur)
         run: |
           cd ios
@@ -70,6 +76,10 @@ jobs:
           done
           ls build/Probe.xcarchive/Products/Applications/Kaufberater.app/ | tr '\n' ' ' | sed 's/^/::notice::Inhalt: /'; echo
           grep -q "AppIcon60x60@2x.png\|Assets.car" <<< "$(ls build/Probe.xcarchive/Products/Applications/Kaufberater.app/)" || echo "::error::App-Symbol fehlt"
+          if [ "${{ inputs.share_ext }}" = "true" ]; then
+            EXT=build/Probe.xcarchive/Products/Applications/Kaufberater.app/PlugIns/KaufberaterShare.appex
+            [ -d "$EXT" ] && echo "::notice::Teilen-Erweiterung eingebettet ($(/usr/libexec/PlistBuddy -c 'Print :NSExtension:NSExtensionPointIdentifier' $EXT/Info.plist), Version $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' $EXT/Info.plist))" || { echo "::error::Teilen-Erweiterung fehlt in der App"; FAIL=1; }
+          fi
           [ -z "$FAIL" ] || exit 1
           echo "::notice::Probe-Archiv erfolgreich – Signieren/Hochladen klappt, sobald die Apple-Schlüssel hinterlegt sind"
       - name: Apple-Account vorbereiten
@@ -78,6 +88,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          SHARE_EXT: ${{ inputs.share_ext }}
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
           printf '%s\n' "$ASC_KEY_P8" > ~/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8

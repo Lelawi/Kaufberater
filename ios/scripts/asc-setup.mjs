@@ -42,6 +42,16 @@ r = await api('POST', '/v1/bundleIdCapabilities', {
 });
 console.log('Push-Mitteilungen:', r.status === 201 ? 'eingeschaltet' : r.status === 409 ? 'schon an' : `Status ${r.status}`);
 
+// Teilen-Menü-Erweiterung braucht eine eigene App-ID (nur wenn mit Erweiterung gebaut wird)
+if (process.env.SHARE_EXT === 'true') {
+  const ext = `${BUNDLE}.share`;
+  const e = await api('GET', `/v1/bundleIds?filter[identifier]=${ext}&limit=5`);
+  if (!e.json?.data?.some((b) => b.attributes.identifier === ext)) {
+    const c = await api('POST', '/v1/bundleIds', { data: { type: 'bundleIds', attributes: { identifier: ext, name: 'Kaufberater Teilen', platform: 'IOS' } } });
+    console.log('App-ID Erweiterung:', c.status === 201 ? 'angelegt' : `Status ${c.status} ${c.text.slice(0, 200)}`);
+  } else console.log('App-ID Erweiterung vorhanden:', ext);
+}
+
 r = await api('GET', `/v1/apps?filter[bundleId]=${BUNDLE}&limit=1`);
 if (!r.json?.data?.length) {
   console.log(`::error::Es gibt noch keinen App-Eintrag in App Store Connect. Bitte einmal anlegen: appstoreconnect.apple.com → Apps → + → Neue App, Plattform iOS, Bundle-ID „${BUNDLE}“, Name z. B. „Kaufberater (privat)“, SKU „kaufberater“. Danach diesen Ablauf erneut starten.`);

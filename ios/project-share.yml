@@ -1,0 +1,38 @@
+# Wie project.yml, zusätzlich mit dem Eintrag im Teilen-Menü („Kaufberater“ beim Teilen eines Links).
+# Wird nur gebaut, wenn der Bau-Ablauf mit share_ext=true gestartet wird.
+include: [project.yml]
+targets:
+  Kaufberater:
+    dependencies:
+      - target: KaufberaterShare
+  KaufberaterShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: KaufberaterShare
+    info:
+      path: KaufberaterShare/Info.plist
+      properties:
+        CFBundleDisplayName: Kaufberater
+        CFBundleName: $(PRODUCT_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundlePackageType: XPC!
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: de
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: de.lelawi.kaufberater.share
+        PRODUCT_NAME: KaufberaterShare
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
