@@ -66,7 +66,10 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
     }
     // Gefundene Modellvarianten (z. B. OLED77G68LW, OLED77G67LW) merken: verbessert die Deal-Suche und spätere Suchen
     const newTerms = [...learned].filter((v) => !(p.search_terms ?? []).map((x) => x.toUpperCase()).includes(v)).slice(0, 6);
-    await sql`update kb_products set discovery_status = ${ok > 0 ? 'done' : 'failed'}, discovery_at = now(),
+    // Ist eine Quelle ausgefallen (z. B. kurz gesperrt), in ca. 6 Stunden noch einmal suchen statt erst in einer Woche
+    const failed = results.length - ok;
+    await sql`update kb_products set discovery_status = ${ok > 0 ? 'done' : 'failed'},
+              discovery_at = ${failed > 0 ? sql`now() - interval '7 days' + interval '6 hours'` : sql`now()`},
               search_terms = ${[...(p.search_terms ?? []), ...newTerms]} where id = ${p.id}`;
   }
   return { products: products.length, listingsAdded };
