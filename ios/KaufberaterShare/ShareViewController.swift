@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 import UserNotifications
 
 final class ShareViewController: UIViewController {
-    private var shared: String?
+    private var shared: String?        // Link (oder Text, falls kein Link)
+    private var sharedText: String?    // kompletter geteilter Text, z. B. „Produktname https://amzn.eu/…“
     private let card = UIView()
     private let label = UILabel()
     private var buttons: [UIButton] = []
@@ -74,21 +75,24 @@ final class ShareViewController: UIViewController {
 
     // MARK: Geteilten Inhalt lesen (Link bevorzugt, sonst Text)
     private func loadInput() async {
-        let providers = (extensionContext?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
-        var text: String?
+        let items = extensionContext?.inputItems as? [NSExtensionItem] ?? []
+        let providers = items.flatMap { $0.attachments ?? [] }
+        // Begleittext (z. B. Produktname aus der Amazon-App) steckt oft nicht im Anhang, sondern am Eintrag selbst
+        var text: String? = items.compactMap { $0.attributedContentText?.string }.first { !$0.isEmpty }
         for p in providers {
-            if p.hasItemConformingToTypeIdentifier(UTType.url.identifier),
+            if shared == nil, p.hasItemConformingToTypeIdentifier(UTType.url.identifier),
                let item = try? await p.loadItem(forTypeIdentifier: UTType.url.identifier), let url = item as? URL, url.scheme?.hasPrefix("http") == true {
-                shared = url.absoluteString; break
+                shared = url.absoluteString; continue
             }
             if text == nil, p.hasItemConformingToTypeIdentifier(UTType.plainText.identifier),
                let item = try? await p.loadItem(forTypeIdentifier: UTType.plainText.identifier) {
                 text = item as? String
             }
         }
-        if shared == nil, let text {
-            // Manche Apps (z. B. Amazon) teilen „Produktname https://…“ als Text
-            shared = text.range(of: #"https?://\S+"#, options: .regularExpression).map { String(text[$0]) } ?? text
+        if let text {
+            // Manche Apps (z. B. Amazon) teilen „Produktname https://amzn.eu/…“ – der Name steckt nur im Text
+            sharedText = String(text.prefix(500))
+            if shared == nil { shared = text.range(of: #"https?://\S+"#, options: .regularExpression).map { String(text[$0]) } ?? text }
         }
         await MainActor.run {
             label.text = shared.map { s in s.count > 90 ? String(s.prefix(90)) + "…" : s } ?? "Kein Link gefunden."
@@ -99,8 +103,10 @@ final class ShareViewController: UIViewController {
     // MARK: An die App übergeben – per Mitteilung, die beim Antippen die richtige Seite öffnet
     private func hand(over action: String) {
         guard let s = shared else { return finish() }
-        let enc = s.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? s
-        let path = action == "check" ? "#/check?auto=1&u=\(enc)" : "#/add?u=\(enc)"
+        // Schnellcheck bekommt Link + Text (Name hilft bei Kurzlinks), Eintragen nur den Link
+        let forCheck = sharedText.map { $0.contains(s) ? $0 : "\($0) \(s)" } ?? s
+        let enc = { (x: String) in x.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? x }
+        let path = action == "check" ? "#/check?auto=1&u=\(enc(forCheck))" : "#/add?u=\(enc(s))"
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             let allowed = [.authorized, .provisional, .ephemeral].contains(settings.authorizationStatus)

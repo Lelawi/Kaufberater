@@ -51,15 +51,19 @@ async function check(input: string, userId: string) {
       name = slug.replace(/-/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || null;
       shop = new URL(url).hostname.replace(/^www\./, '');
     } else {
-      const p = await fetchPage(url, { retries: 1 });
-      const o = parseShopPage(p.text, p.url);
-      if (o) { name = o.title ?? null; price = o.price + (o.shipping ?? 0); shop = o.shop; listPrice = o.listPrice ?? null; gtin = (o as any).gtin ?? null; }
+      try {
+        const p = await fetchPage(url, { retries: 1 });
+        const o = parseShopPage(p.text, p.url);
+        if (o) { name = o.title ?? null; price = o.price + (o.shipping ?? 0); shop = o.shop; listPrice = o.listPrice ?? null; gtin = (o as any).gtin ?? null; }
+      } catch (e) { console.log('Schnellcheck: Seite nicht lesbar –', (e as Error).message); }   // dann zählt der mitgeteilte Text
     }
   }
   const rest = input.replace(urlMatch?.[0] ?? '', '');
   const textPrice = parsePrice(rest.match(/(\d[\d.,]*)\s*(€|eur|euro)/i)?.[1]);
   price = textPrice ?? price;   // eingetippter Preis hat Vorrang (z. B. Preis im Laden)
-  if (!name) name = rest.replace(/(\d[\d.,]*)\s*(€|eur|euro)/i, '').replace(/\b(für|fuer|bei|um)\s*$/i, '').trim().slice(0, 120) || null;
+  if (!name) name = rest.replace(/(\d[\d.,]*)\s*(€|eur|euro)/i, '').replace(/\b(für|fuer|bei|um)\s*$/i, '')
+    .replace(/^(schau dir (das|dies) (mal )?an|sieh dir (das|dies) an|check (this|that) out|guck mal)\s*[:!-]?\s*/i, '')
+    .replace(/\s*[-|–]\s*(amazon\.de|amazon)\s*$/i, '').trim().slice(0, 120) || null;
   if (!name) return { name, price, url, verdict: 'unknown', summary: 'Produkt nicht erkannt. Tipp: Link und Preis eingeben.', details: {} };
 
   const model = guessModel(name) ?? guessModel(rest) ?? (url ? guessModel(decodeURIComponent(url)) : null);

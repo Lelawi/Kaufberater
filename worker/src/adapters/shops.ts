@@ -52,7 +52,7 @@ export function ruleFor(url: string): ShopRule | undefined {
 }
 
 export function needsHomeUrl(url: string): boolean {
-  return !!ruleFor(url)?.needsHome || /amazon\.|geizhals\./.test(hostOf(url));
+  return !!ruleFor(url)?.needsHome || /amazon\.|geizhals\.|^amzn\.|^a\.co$/.test(hostOf(url));
 }
 
 export function parseShopPage(html: string, url: string): OfferData | null {
