@@ -30,6 +30,8 @@ export interface OfferData {
   deliveryText?: string;
   seller?: string;
   shipsToDE?: boolean;     // false = wird ausgefiltert
+  shopRating?: number | null;   // Shop-Bewertung 1–5 (falls bekannt)
+  shopReviews?: number | null;  // Anzahl Shop-Bewertungen
 }
 
 /** Treffer in Deal-Portalen */

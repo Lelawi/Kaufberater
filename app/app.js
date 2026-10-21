@@ -454,12 +454,21 @@ function sourceLabel(l) {
   return (names[l.source] ?? host) + (l.condition !== 'new' ? ' (Refurbished)' : '');
 }
 
+/** Hinweis bei Shops mit wenigen oder schlechten Bewertungen (diese lösen keine Meldungen aus) */
+function shopTrust(o) {
+  const r = o.shop_rating != null ? Number(o.shop_rating) : null; const n = o.shop_reviews;
+  if (n != null && n < 20) return html`<br><span style="color:var(--warn)">Nur ${n} Shop-Bewertung${n === 1 ? '' : 'en'} – vorsichtig sein</span>`;
+  if (r != null && r < 3.5 && (n ?? 0) < 500) return html`<br><span style="color:var(--warn)">Shop-Bewertung ${r.toLocaleString('de-DE')} von 5</span>`;
+  if (r != null) return html`<br>Shop-Bewertung ${r.toLocaleString('de-DE')} (${Number(n ?? 0).toLocaleString('de-DE')})`;
+  return '';
+}
+
 function offerTable(list, showCondition = false) {
   const condText = { refurbished: 'Refurbished', bware: 'B-Ware', used: 'Gebraucht', new: 'Neu' };
   const via = (o) => [...(o.via ?? [o.source])].map((v) => ({ idealo: 'idealo', billiger: 'billiger.de', geizhals: 'Geizhals' }[v] ?? v)).join(', ');
   const rowHtml = (o, i) => html`<tr class="${i === 0 ? 'best' : ''}">
       <td><a class="shop" href="${safeUrl(o.url)}" target="_blank" rel="noopener">${o.shop}</a>${o.country && o.country !== 'DE' ? html` <span class="muted">(${o.country})</span>` : ''}
-        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${o.source && o.source !== 'shop' ? html`<br>über ${via(o)}` : ''}</div></td>
+        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${o.source && o.source !== 'shop' ? html`<br>über ${via(o)}` : ''}${shopTrust(o)}</div></td>
       <td class="r"><span class="num price-cell">${fmtEur(o.effective_total ?? o.total)}</span>
         <div class="hint">${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}</div></td>
     </tr>`;

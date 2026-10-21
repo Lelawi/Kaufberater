@@ -43,6 +43,9 @@ export function parseBilligerOffers(html: string, pageUrl: string): { offers: Of
     // billiger.de leitet per Formular weiter (data-submit = Weiterleitungs-Token) → eigene Weiterleitungsseite der App
     const token = row.find('[data-submit]').first().attr('data-submit');
     const link = token && /^[A-Za-z0-9_-]{20,2000}$/.test(token) ? `${GO_URL}?b=${token}` : undefined;
+    // Anzahl Shop-Bewertungen steht in Klammern hinter dem Angebotstitel, z. B. "(1.326)"
+    const reviewsM = cleanText(row.find('a[href^="/shops/"]').first().text()).match(/([\d.]+)/);
+    const shopReviews = reviewsM ? Number(reviewsM[1].replace(/\./g, '')) : null;
     const delivery = text.match(/Lieferzeit:\s*([^]+?)(?:Abholung|Shop-Info|Zum Anbieter|$)/)?.[1]?.trim();
     out.push({
       offerKey: `o:${row.attr('data-shop-id') ?? shop}`,
@@ -51,6 +54,7 @@ export function parseBilligerOffers(html: string, pageUrl: string): { offers: Of
       price, shipping: shipping === 0 && shipM ? 0 : shipping,
       inStock: !/nicht lieferbar|ausverkauft/i.test(text),
       deliveryText: delivery?.slice(0, 120),
+      shopReviews,
       offerId: id,
     } as OfferData);
   });

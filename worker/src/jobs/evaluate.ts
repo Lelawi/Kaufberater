@@ -7,6 +7,7 @@ import { createAlert } from './alerts.ts';
 import type { ProductRow } from '../products.ts';
 
 interface Offer {
+  shop_rating?: number | null; shop_reviews?: number | null;
   id: string; product_id: string; source: string; shop: string; country: string; condition: string; url: string | null;
   price: number; shipping: number | null; total: number; list_price: number | null; in_stock: boolean | null; title: string | null;
 }
@@ -34,7 +35,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     }
     const vouchers = userVouchers.get(p.user_id)!;
     const offers = await sql<Offer[]>`
-      select id, product_id, source, shop, country, condition, url, price, shipping, total, list_price, in_stock, title
+      select id, product_id, source, shop, country, condition, url, price, shipping, total, list_price, in_stock, title, shop_rating, shop_reviews
       from kb_offers where product_id = ${p.id} and not gone and coalesce(in_stock, true)`;
 
     // 1) Effektiver Endpreis je Angebot
@@ -47,8 +48,14 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     // 2) Bestpreise
     const newOnes = enriched.filter((e) => e.o.condition === 'new').sort((a, b) => a.eff - b.eff);
     const refurb = enriched.filter((e) => e.o.condition !== 'new').sort((a, b) => a.eff - b.eff);
-    const best = newOnes[0];
-    const bestR = p.include_refurb ? refurb[0] : undefined;
+    // Für Bestpreis und Meldungen nur Händler mit ordentlichen Bewertungen (unbekannte Bewertung zählt als ok)
+    // Unsicher = kaum Bewertungen (< 20) oder schlecht bewertet bei wenigen Bewertungen. Große Ketten mit
+    // tausenden Bewertungen bleiben drin, auch wenn ihr Schnitt mäßig ist.
+    const trusted = (e: (typeof enriched)[number]) =>
+      !(e.o.shop_reviews != null && e.o.shop_reviews < 20) &&
+      !(e.o.shop_rating != null && e.o.shop_rating < 3.5 && (e.o.shop_reviews ?? 0) < 500);
+    const best = newOnes.find(trusted);
+    const bestR = p.include_refurb ? refurb.find(trusted) : undefined;
     const prevLowest = p.lowest_seen;
     await sql`update kb_products set
       best_price = ${best?.eff ?? null}, best_offer_id = ${best?.o.id ?? null},

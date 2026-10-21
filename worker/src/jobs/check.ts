@@ -91,14 +91,16 @@ async function saveOffers(l: DueListing, offers: OfferData[]) {
     const prev = await sql`select id, total from kb_offers where listing_id = ${l.id} and offer_key = ${o.offerKey}`;
     const row = await sql`
       insert into kb_offers (product_id, listing_id, user_id, offer_key, source, shop, country, condition, title, url, price, shipping, total,
-                             list_price, in_stock, delivery_text, seller, last_seen_at, gone)
+                             list_price, in_stock, delivery_text, seller, shop_rating, shop_reviews, last_seen_at, gone)
       values (${l.product_id}, ${l.id}, ${l.user_id}, ${o.offerKey}, ${l.source}, ${o.shop}, ${o.country}, ${o.condition}, ${o.title?.slice(0, 500) ?? null},
               ${o.url ?? l.url}, ${o.price}, ${o.shipping ?? null}, ${total}, ${o.listPrice ?? null}, ${o.inStock ?? null},
-              ${o.deliveryText?.slice(0, 200) ?? null}, ${o.seller?.slice(0, 200) ?? null}, now(), false)
+              ${o.deliveryText?.slice(0, 200) ?? null}, ${o.seller?.slice(0, 200) ?? null}, ${o.shopRating ?? null}, ${o.shopReviews ?? null}, now(), false)
       on conflict (listing_id, offer_key) do update set
         shop = excluded.shop, country = excluded.country, condition = excluded.condition, title = coalesce(excluded.title, kb_offers.title),
         url = excluded.url, price = excluded.price, shipping = excluded.shipping, total = excluded.total, list_price = excluded.list_price,
-        in_stock = excluded.in_stock, delivery_text = excluded.delivery_text, seller = excluded.seller, last_seen_at = now(), gone = false
+        in_stock = excluded.in_stock, delivery_text = excluded.delivery_text, seller = excluded.seller,
+        shop_rating = coalesce(excluded.shop_rating, kb_offers.shop_rating), shop_reviews = coalesce(excluded.shop_reviews, kb_offers.shop_reviews),
+        last_seen_at = now(), gone = false
       returning id`;
     const offerId = row[0].id as string;
     const changed = !prev.length || Number(prev[0].total) !== total;

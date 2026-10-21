@@ -48,6 +48,8 @@ export function parseIdealoOffers(html: string, pageUrl: string): OfferData[] {
     const offerKey = href?.match(/offerKey=([a-f0-9]+)/)?.[1];
     const delivery = cleanText(it.find('.productOffers-listItemOfferDeliveryStatusDatesRange, .productOffers-listItemOfferDeliveryStatusDates').first().text()) || undefined;
     const marketplace = /marktplatz/i.test(shop);
+    const shopRating = parsePrice(it.find('.productOffers-listItemOfferShopV2Stars, .starAndRatingWrapper').first().text());
+    const shopReviews = Number(cleanText(it.find('.productOffers-listItemOfferShopV2NORatings--numberOfRatings').first().text()).replace(/\D/g, '')) || null;
     out.push({
       offerKey: sid ? `sid:${sid}${marketplace ? ':' + (offerKey ?? '').slice(0, 8) : ''}` : `key:${offerKey ?? shop}`,
       shop: shop.replace(/\s*\(DE\)\s*$/, '') || 'unbekannt',
@@ -59,6 +61,8 @@ export function parseIdealoOffers(html: string, pageUrl: string): OfferData[] {
       shipping,
       inStock: true,
       deliveryText: delivery,
+      shopRating: shopRating && shopRating <= 5 ? shopRating : null,
+      shopReviews,
     });
   });
   return out;
