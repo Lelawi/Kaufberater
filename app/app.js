@@ -1,5 +1,5 @@
 // Kaufberater – App (läuft komplett im Browser, Daten liegen in Supabase)
-import { sb, html, raw, esc, safeUrl, fmtEur, fmtEur0, priceTag, fmtDate, ago, daysUntil, levelOf, LEVEL_TEXT, toast, md, nextShoppingEvent } from './lib.js';
+import { sb, html, raw, esc, safeUrl, fmtEur, fmtEur0, priceTag, fmtDate, ago, daysUntil, levelOf, LEVEL_TEXT, toast, md, nextShoppingEvent, hotWindow } from './lib.js';
 import { ladder, priceChart } from './chart.js';
 
 /** Läuft die Oberfläche in der iPhone-App (statt im Browser)? */
@@ -134,7 +134,8 @@ async function viewList() {
   const bf = nextShoppingEvent(); const bfOnly = (() => { let d = new Date(); for (let i = 0; i < 6; i++) { const e = nextShoppingEvent(d); if (!e) return null; if (e.name === 'Black Friday') return e.days <= 45 ? { ...e, days: Math.ceil((+e.date - Date.now()) / 864e5) } : null; d = new Date(+e.date + 864e5); } return null; })();
   const ev = bfOnly ?? bf;
   render(html`<div class="head"><div><h1>Wunschliste</h1><div class="sub">${watching.length} beobachtet${lastCheck ? html` · Preise ${ago(lastCheck)}` : ''}</div></div><a class="btn" href="#/add">Eintragen</a></div>
-    ${ev && ev.days <= 45 ? html`<p class="event-note"><strong>${ev.name}</strong> ${ev.days === 0 ? 'ist heute' : ev.days === 1 ? 'ist morgen' : html`in ${ev.days} Tagen`} (${fmtDate(ev.date, { day: 'numeric', month: 'long' })}) – viele Händler senken die Preise schon einige Tage vorher.</p>` : ''}
+    ${hotWindow() ? html`<p class="event-note"><strong>${hotWindow()} läuft:</strong> Preise und Deals werden jetzt häufiger geprüft – bei einem Treffer meldet sich die App sofort.</p>`
+      : ev && ev.days <= 45 ? html`<p class="event-note"><strong>${ev.name}</strong> ${ev.days === 0 ? 'ist heute' : ev.days === 1 ? 'ist morgen' : html`in ${ev.days} Tagen`} (${fmtDate(ev.date, { day: 'numeric', month: 'long' })}) – viele Händler senken die Preise schon einige Tage vorher.</p>` : ''}
     ${group('Jetzt interessant', hot)}
     ${group('Beobachten', rest)}
     ${group('Gekauft – Preisschutz aktiv', bought, 'Wird bis zum Ende der Rückgabefrist weiter beobachtet.')}

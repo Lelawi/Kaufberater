@@ -117,3 +117,14 @@ export function nextShoppingEvent(now = new Date()) {
   const [name, date] = all[0];
   return { name, date, days: Math.max(0, Math.ceil((+date - +now) / 864e5)) };
 }
+
+/** Heiße Phase (wie im Worker): Singles Day und Black Week (Montag vor Black Friday bis Dienstag nach Cyber Monday) */
+export function hotWindow(now = new Date()) {
+  const y = now.getFullYear();
+  const d = new Date(Date.UTC(y, 10, 1)); const thu = (4 - d.getUTCDay() + 7) % 7 + 1;
+  const bf = new Date(y, 10, thu + 22);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (+today === +new Date(y, 10, 11)) return 'Singles Day';
+  const diff = Math.round((+today - +bf) / 864e5);
+  return diff >= -4 && diff <= 4 ? 'Black Week' : null;
+}
