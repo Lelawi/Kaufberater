@@ -143,6 +143,9 @@ struct WebContainer: UIViewRepresentable {
             switch type {
             case "push-status":
                 PushManager.shared.status { st in self.reply(id, true, st.rawValue) }
+            case "push-token":
+                // Aktueller Geräte-Schlüssel (leer, solange Mitteilungen aus sind) – die Web-App speichert ihn nach der Anmeldung
+                reply(id, true, PushManager.shared.lastToken ?? "")
             case "push-enable":
                 PushManager.shared.enable { result in
                     switch result {

@@ -18,8 +18,15 @@ session = (await sb.auth.getSession()).data.session;
 sb.auth.onAuthStateChange((ev, s) => {
   if (ev === 'INITIAL_SESSION') return;
   const was = !!session; session = s;
-  if (!!s !== was) route();
+  if (!!s !== was) { route(); if (s) syncNativeToken(); }
 });
+syncNativeToken();
+
+/** iPhone-App: Geräte-Schlüssel nach dem Start/der Anmeldung abholen und speichern (falls er vor dem Laden der Seite kam) */
+async function syncNativeToken() {
+  if (!NATIVE || !session) return;
+  try { const t = await NATIVE.call('push-token'); if (t) await saveApnsToken(t); } catch { /* ältere App-Version */ }
+}
 window.addEventListener('hashchange', route);
 route();
 setInterval(refreshBadge, 60_000);
@@ -719,7 +726,9 @@ async function viewSettings() {
   document.getElementById('pushOff')?.addEventListener('click', disablePush);
   document.getElementById('pushTest')?.addEventListener('click', async () => {
     const { error } = await sb.from('kb_alerts').insert({ user_id: session.user.id, kind: 'system', level: 'good', title: 'Testnachricht vom Kaufberater', body: 'Push-Nachrichten funktionieren. So sieht eine Meldung aus.', dedup_key: 'test:' + Date.now() });
-    toast(error ? error.message : 'Kommt beim nächsten Durchlauf (spätestens in einer Stunde)');
+    if (error) return toast(error.message);
+    const { data: fast } = await sb.rpc('kb_request_delivery');
+    toast(fast ? 'Testnachricht kommt in ca. 1–2 Minuten' : 'Kommt beim nächsten Durchlauf (ohne GitHub-Schlüssel kann das ein paar Stunden dauern)');
   });
 }
 
@@ -756,7 +765,7 @@ function setupPanel(st, pushState) {
     </details>` : ''}
     ${apnsMissing || (NATIVE && location.hash.includes('apns')) ? html`<details class="more" open><summary>Apple-Push-Schlüssel eintragen</summary>
       <ol class="prose" style="padding-left:20px">
-        <li><a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noopener">developer.apple.com → Keys</a> → <strong>+</strong>, Name „Kaufberater Push“, Haken bei <strong>Apple Push Notifications service (APNs)</strong> → herunterladen.</li>
+        <li><a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noopener">developer.apple.com → Keys</a> → <strong>+</strong>, Name „Kaufberater Push“, Haken bei <strong>Apple Push Notifications service (APNs)</strong>, Umgebung <strong>Sandbox &amp; Production</strong> → herunterladen.</li>
         <li>Die .p8-Datei in der Dateien-App öffnen, den ganzen Text kopieren (inkl. BEGIN/END) und unten einfügen.</li>
         <li>Key-ID (10 Zeichen, steht beim Schlüssel) und Team-ID (unter „Membership details“) eintragen.</li>
       </ol>
