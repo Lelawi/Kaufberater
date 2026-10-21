@@ -114,3 +114,10 @@ test('Heiße Phase (Black Week, Singles Day)', () => {
   assert.equal(hotWindow(new Date('2026-12-01T20:00:00Z')), 'Black Week');   // Dienstag nach Cyber Monday
   assert.equal(hotWindow(new Date('2026-12-02T12:00:00Z')), null);
 });
+
+import { preBlackWeekAnalysis } from '../src/util/events.ts';
+test('Analyse vor der Black Week', () => {
+  assert.equal(preBlackWeekAnalysis(new Date('2026-10-21T12:00:00Z')), null);
+  assert.equal(preBlackWeekAnalysis(new Date('2026-11-05T12:00:00Z'))!.toISOString(), '2026-11-22T03:00:00.000Z');
+  assert.equal(preBlackWeekAnalysis(new Date('2026-11-23T12:00:00Z')), null);
+});

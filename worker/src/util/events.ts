@@ -40,3 +40,13 @@ export function hotWindow(now = new Date()): string | null {
   if (t >= day(bf, -4) && t < day(bf, 5)) return 'Black Week';
   return null;
 }
+
+/** Termin für eine frische Tiefenanalyse vor der Black Week (Sonntag davor, früh morgens) – nur in den 3 Wochen davor */
+export function preBlackWeekAnalysis(now = new Date()): Date | null {
+  for (const y of [now.getUTCFullYear(), now.getUTCFullYear() + 1]) {
+    const bf = shoppingEvents(y).find((e) => e.name === 'Black Friday')!.date;
+    const target = new Date(+bf - 5 * 864e5 + 3 * 3600_000);   // Sonntag 04:00 Uhr deutscher Zeit
+    if (+now <= +target && +now >= +target - 21 * 864e5) return target;
+  }
+  return null;
+}
