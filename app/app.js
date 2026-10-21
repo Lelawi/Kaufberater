@@ -489,7 +489,7 @@ function mergeOffers(list) {
 }
 
 function sourceLabel(l) {
-  const names = { idealo: 'idealo', billiger: 'billiger.de', geizhals: 'Geizhals', amazon: 'Amazon.de', amazon_fr: 'Amazon.fr', amazon_it: 'Amazon.it', amazon_es: 'Amazon.es', amazon_nl: 'Amazon.nl' };
+  const names = { idealo: 'idealo', billiger: 'billiger.de', check24: 'CHECK24', ebay: 'eBay', geizhals: 'Geizhals', amazon: 'Amazon.de', amazon_fr: 'Amazon.fr', amazon_it: 'Amazon.it', amazon_es: 'Amazon.es', amazon_nl: 'Amazon.nl' };
   let host = ''; try { host = new URL(l.url).host.replace(/^www\./, ''); } catch { /* */ }
   return (names[l.source] ?? host) + (l.condition !== 'new' ? ' (Refurbished)' : '');
 }
@@ -505,10 +505,13 @@ function shopTrust(o) {
 
 function offerTable(list, showCondition = false) {
   const condText = { refurbished: 'Refurbished', bware: 'B-Ware', used: 'Gebraucht', new: 'Neu' };
-  const via = (o) => [...(o.via ?? [o.source])].map((v) => ({ idealo: 'idealo', billiger: 'billiger.de', geizhals: 'Geizhals' }[v] ?? v)).join(', ');
+  // „über …“ nur bei Preisvergleichen/Marktplätzen – bei Shops, die direkt abgefragt werden, ist es der Shop selbst
+  const VIA = { idealo: 'idealo', billiger: 'billiger.de', geizhals: 'Geizhals', check24: 'CHECK24', ebay: 'eBay' };
+  const viaList = (o) => [...(o.via ?? [o.source])].filter((v) => VIA[v]).map((v) => VIA[v]);
+  const via = (o) => viaList(o).join(', ');
   const rowHtml = (o, i) => html`<tr class="${i === 0 ? 'best' : ''}">
       <td><a class="shop" href="${safeUrl(o.url)}" target="_blank" rel="noopener">${o.shop}</a>${o.country && o.country !== 'DE' ? html` <span class="muted">(${o.country})</span>` : ''}
-        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${o.source && o.source !== 'shop' ? html`<br>über ${via(o)}` : ''}${shopTrust(o)}</div></td>
+        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${viaList(o).length ? html`<br>über ${via(o)}` : ''}${shopTrust(o)}</div></td>
       <td class="r"><span class="num price-cell">${fmtEur(o.effective_total ?? o.total)}</span>
         <div class="hint">${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}</div></td>
     </tr>`;
@@ -707,7 +710,7 @@ async function viewSettings() {
     ${NATIVE?.share ? raw('</details>') : ''}
   </section>
   <section class="panel flat"><h2>Quellen</h2>
-    <p class="hint" style="margin-top:-6px">Letzter Durchlauf: ${ago(rR.data?.[0]?.finished_at ?? rR.data?.[0]?.started_at)}. Amazon, MediaMarkt, Geizhals und weitere Shops kommen dazu, sobald der Heim-Server (Raspberry Pi) läuft.</p>
+    <p class="hint" style="margin-top:-6px">Letzter Durchlauf: ${ago(rR.data?.[0]?.finished_at ?? rR.data?.[0]?.started_at)}. Amazon, MediaMarkt, Otto, Galaxus, Kaufland & Co. kommen über die Preisvergleiche (idealo, billiger.de, CHECK24) herein; direkt abgefragt werden sie, sobald der Heim-Server (Raspberry Pi) läuft.</p>
     <ul class="list-plain">${(hR.data ?? []).map((h) => html`<li><span>${h.source}</span><span class="hint">${h.blocked_until && new Date(h.blocked_until) > new Date() ? 'blockiert, neuer Versuch später' : h.last_ok_at && (!h.last_error_at || h.last_ok_at > h.last_error_at) ? 'ok ' + ago(h.last_ok_at) : 'Fehler ' + ago(h.last_error_at)}</span></li>`)}</ul>
   </section>
   <section class="panel flat"><div class="btn-row"><button class="btn ghost" id="logout">Abmelden</button></div></section>`);
