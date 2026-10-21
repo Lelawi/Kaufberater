@@ -104,3 +104,16 @@ export function md(text) {
   if (inList) out += '</ul>';
   return out;
 }
+
+/** Nächster großer Aktionstag (Singles Day, Black Friday, Cyber Monday, Nach-Weihnachts-Sale) */
+export function nextShoppingEvent(now = new Date()) {
+  const evs = (y) => {
+    const d = new Date(Date.UTC(y, 10, 1)); const thu = (4 - d.getUTCDay() + 7) % 7 + 1;
+    const bf = new Date(Date.UTC(y, 10, thu + 22));
+    return [['Singles Day', new Date(Date.UTC(y, 10, 11))], ['Black Friday', bf], ['Cyber Monday', new Date(+bf + 3 * 864e5)], ['Nach-Weihnachts-Sale', new Date(Date.UTC(y, 11, 27))]];
+  };
+  const all = [...evs(now.getUTCFullYear()), ...evs(now.getUTCFullYear() + 1)].filter(([, d]) => +d >= +now - 864e5).sort((a, b) => a[1] - b[1]);
+  if (!all.length) return null;
+  const [name, date] = all[0];
+  return { name, date, days: Math.max(0, Math.ceil((+date - +now) / 864e5)) };
+}

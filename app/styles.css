@@ -242,3 +242,6 @@ details.more > summary { cursor: pointer; color: var(--ink-2); font-weight: 500;
   .price-big { font-size: 42px; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+.event-note { margin: -8px 0 16px; padding: 10px 12px; border-left: 4px solid var(--tag); background: var(--surface); border-radius: 0 var(--radius-s) var(--radius-s) 0; font-size: 15px; color: var(--ink-2); }
+.event-note strong { color: var(--ink); }

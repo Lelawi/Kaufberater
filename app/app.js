@@ -1,5 +1,5 @@
 // Kaufberater – App (läuft komplett im Browser, Daten liegen in Supabase)
-import { sb, html, raw, esc, safeUrl, fmtEur, fmtEur0, priceTag, fmtDate, ago, daysUntil, levelOf, LEVEL_TEXT, toast, md } from './lib.js';
+import { sb, html, raw, esc, safeUrl, fmtEur, fmtEur0, priceTag, fmtDate, ago, daysUntil, levelOf, LEVEL_TEXT, toast, md, nextShoppingEvent } from './lib.js';
 import { ladder, priceChart } from './chart.js';
 
 const view = document.getElementById('view');
@@ -98,6 +98,10 @@ async function viewList() {
     .select('id,name,brand,model,status,window_start,window_end,window_type,threshold_good,threshold_top,threshold_instant,max_price,best_price,best_refurb_price,lowest_seen,last_checked_at,discovery_status,analysis_status,bought_price,bought_at,return_until,include_refurb,created_at')
     .order('created_at', { ascending: false });
   if (error) throw error;
+  // Preisentwicklung der letzten Woche
+  const { data: trends } = await sb.rpc('kb_trends');
+  const trendMap = new Map((trends ?? []).map((t) => [t.product_id, t]));
+  for (const p of products) { const t = trendMap.get(p.id); if (t?.price_7d && p.best_price) p.trend7 = Number(p.best_price) - Number(t.price_7d); }
   const archived = products.filter((p) => p.status === 'archived');
   if (!products.some((p) => p.status !== 'archived')) {
     return render(html`<div class="head"><h1>Wunschliste</h1></div>
@@ -112,7 +116,11 @@ async function viewList() {
   const bought = products.filter((p) => p.status === 'bought');
   const group = (title, list, hint) => list.length ? html`<div class="group-title">${title} <span class="count">${list.length}</span></div>${hint ? html`<p class="hint" style="margin:-4px 0 8px">${hint}</p>` : ''}<div class="rows">${list.map(row)}</div>` : '';
   const lastCheck = watching.map((p) => p.last_checked_at).filter(Boolean).sort().pop();
+  // Black Friday ist in Deutschland der wichtigste Aktionstag → hat Vorrang, sobald er in Sicht ist
+  const bf = nextShoppingEvent(); const bfOnly = (() => { let d = new Date(); for (let i = 0; i < 6; i++) { const e = nextShoppingEvent(d); if (!e) return null; if (e.name === 'Black Friday') return e.days <= 45 ? { ...e, days: Math.ceil((+e.date - Date.now()) / 864e5) } : null; d = new Date(+e.date + 864e5); } return null; })();
+  const ev = bfOnly ?? bf;
   render(html`<div class="head"><div><h1>Wunschliste</h1><div class="sub">${watching.length} beobachtet${lastCheck ? html` · Preise ${ago(lastCheck)}` : ''}</div></div><a class="btn" href="#/add">Eintragen</a></div>
+    ${ev && ev.days <= 45 ? html`<p class="event-note"><strong>${ev.name}</strong> ${ev.days === 0 ? 'ist heute' : ev.days === 1 ? 'ist morgen' : html`in ${ev.days} Tagen`} (${fmtDate(ev.date, { day: 'numeric', month: 'long' })}) – viele Händler senken die Preise schon einige Tage vorher.</p>` : ''}
     ${group('Jetzt interessant', hot)}
     ${group('Beobachten', rest)}
     ${group('Gekauft – Preisschutz aktiv', bought, 'Wird bis zum Ende der Rückgabefrist weiter beobachtet.')}
@@ -167,6 +175,7 @@ function row(p) {
   }
   if (p.status === 'bought' && p.return_until) meta.push(`Rückgabe bis ${fmtDate(p.return_until, { day: 'numeric', month: 'short' })}`);
   if (p.best_refurb_price && p.include_refurb && p.status === 'watching') meta.push(`Refurbished ab ${fmtEur0(p.best_refurb_price)}`);
+  if (p.trend7 && Math.abs(p.trend7) >= 1 && p.status === 'watching') meta.unshift(p.trend7 < 0 ? `↓ ${fmtEur0(-p.trend7)} in 7 Tagen` : `↑ ${fmtEur0(p.trend7)} in 7 Tagen`);
   const price = p.status === 'bought' ? p.bought_price : p.best_price;
   return html`<a class="row" href="#/p/${p.id}">
     <div class="name">${p.name}</div>

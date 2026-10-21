@@ -57,3 +57,12 @@ test('Effektivpreis aus Deal-Titel', () => {
   assert.equal(effectivePrice('effektiv 2.474,50 €'), 2474.5);
   assert.equal(effectivePrice('LG OLED77G68LW Berlet'), null);
 });
+
+import { nextShoppingEvent, shoppingEvents } from '../src/util/events.ts';
+test('Aktionstage', () => {
+  const bf = shoppingEvents(2026).find((e) => e.name === 'Black Friday')!;
+  assert.equal(bf.date.toISOString().slice(0, 10), '2026-11-27');
+  assert.equal(shoppingEvents(2025).find((e) => e.name === 'Black Friday')!.date.toISOString().slice(0, 10), '2025-11-28');
+  const n = nextShoppingEvent(new Date('2026-10-21T10:00:00Z'))!;
+  assert.equal(n.name, 'Singles Day');
+});
