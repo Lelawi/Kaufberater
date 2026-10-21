@@ -7,7 +7,7 @@ import { billigerAdapter } from '../adapters/billiger.ts';
 import { pepperAdapters } from '../adapters/pepper.ts';
 import { matchTitle, guessModel, type ProductQuery } from '../util/match.ts';
 import type { OfferData } from '../adapters/types.ts';
-import { plausibleOffers } from '../util/plausible.ts';
+import { plausibleOffers, IMPORT_MARKET } from '../util/plausible.ts';
 import { fmtEur, parsePrice } from '../util/money.ts';
 import { createAlert } from './alerts.ts';
 import { IS_HOME } from '../adapters/registry.ts';
@@ -32,8 +32,6 @@ export async function runQuickChecks(deadline: number) {
   }
   return { done };
 }
-
-const IMPORT_MARKET = /\b(aliexpress|temu|wish|joybuy|banggood|gearbest|tomtop|geekbuying)\b/i;
 
 async function check(input: string, userId: string) {
   const urlMatch = input.match(/https?:\/\/\S+/);

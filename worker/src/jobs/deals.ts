@@ -5,6 +5,7 @@ import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
 import { createAlert } from './alerts.ts';
 import { fmtEur } from '../util/money.ts';
+import { IMPORT_MARKET } from '../util/plausible.ts';
 
 export async function runDeals(deadline: number, opts: { productId?: string; portals?: string[] } = {}) {
   const sql = await db();
@@ -27,7 +28,8 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
       catch (e) { await recordSourceResult(ad.key, false, (e as Error).message); return; }
       for (const d of deals as any[]) {
         stats.found++;
-        const notes = d.foreign ? `Händler in ${ad.country} – Lieferung nach DE prüfen` : null;
+        const importWare = IMPORT_MARKET.test(d.merchant ?? '') || IMPORT_MARKET.test(d.title);
+        const notes = d.foreign ? `Händler in ${ad.country} – Lieferung nach DE prüfen` : importWare ? 'Marktplatz/Import – Garantie und Länderversion prüfen' : null;
         const r = await sql`
           insert into kb_deals (product_id, user_id, portal, external_id, title, url, merchant, price, next_best_price, temperature,
                                 comment_count, posted_at, expired, voucher_code, match_score, notes)
@@ -58,6 +60,7 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
               title: `${ad.label}-Deal: ${p.name}${d.price ? ' für ' + fmtEur(d.price) : ''}`,
               body: `${d.title}${d.merchant ? ' – bei ' + d.merchant : ''}${d.temperature !== null ? ` (${Math.round(d.temperature)}°)` : ''}` +
                 (d.voucherCode ? ` Gutscheincode: ${d.voucherCode}` : '') +
+                (importWare ? ' Achtung: Marktplatz/Import – Garantie und Länderversion prüfen.' : '') +
                 (p.best_price && d.price ? `. Zum Vergleich: bester beobachteter Preis aktuell ${fmtEur(p.best_price)}.` : ''),
               url: d.url, dedupKey: `deal:${d.portal}:${d.externalId}`,
             });

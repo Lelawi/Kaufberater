@@ -27,3 +27,6 @@ export function plausibleOffers<T extends OfferData>(offers: T[]): T[] {
     return (o.shopReviews ?? 0) >= 500;
   });
 }
+
+/** Marktplätze, auf denen oft Importware/andere Länderversionen verkauft werden (Garantie, Netzteil, Sprache prüfen) */
+export const IMPORT_MARKET = /\b(aliexpress|temu|wish|joybuy|banggood|gearbest|tomtop|geekbuying)\b/i;
