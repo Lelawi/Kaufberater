@@ -35,7 +35,7 @@ export async function runQuickChecks(deadline: number) {
   }
   }
   // Hängengebliebene (Lauf abgebrochen) wieder einreihen
-  await sql`update kb_quick_checks set status = 'queued' where status = 'running' and created_at < now() - interval '20 minutes' and done_at is null`;
+  await sql`update kb_quick_checks set status = 'queued' where status = 'running' and created_at < now() - interval '20 minutes' and created_at > now() - interval '6 hours' and done_at is null`;
   return { done };
 }
 
