@@ -63,13 +63,14 @@ jobs:
             CURRENT_PROJECT_VERSION=${{ github.run_number }} archive > probe.log 2>&1 \
             || { grep -E "error:" probe.log | sort -u | head -30 | sed 's/^/::error::/'; tail -40 probe.log; exit 1; }
           PL=build/Probe.xcarchive/Products/Applications/Kaufberater.app/Info.plist
-          for k in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion CFBundleIconName MinimumOSVersion; do
+          for k in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion CFBundleIconName CFBundleIcons:CFBundlePrimaryIcon:CFBundleIconName MinimumOSVersion; do
             v=$(/usr/libexec/PlistBuddy -c "Print :$k" "$PL" 2>/dev/null || echo FEHLT)
             echo "::notice::Info.plist $k = $v"
-            [ "$v" = FEHLT ] && echo "::error::$k fehlt in der fertigen App"
+            [ "$v" = FEHLT ] && { echo "::error::$k fehlt in der fertigen App"; FAIL=1; }
           done
           ls build/Probe.xcarchive/Products/Applications/Kaufberater.app/ | tr '\n' ' ' | sed 's/^/::notice::Inhalt: /'; echo
           grep -q "AppIcon60x60@2x.png\|Assets.car" <<< "$(ls build/Probe.xcarchive/Products/Applications/Kaufberater.app/)" || echo "::error::App-Symbol fehlt"
+          [ -z "$FAIL" ] || exit 1
           echo "::notice::Probe-Archiv erfolgreich – Signieren/Hochladen klappt, sobald die Apple-Schlüssel hinterlegt sind"
       - name: Apple-Account vorbereiten
         if: env.HAS_ASC == 'true'
