@@ -128,3 +128,11 @@ test('Preisverlauf von billiger.de lesen', () => {
   assert.deepEqual(parseBilligerHistory(html), [{ date: '2026-05-21', price: 4999 }, { date: '2026-05-23', price: 4499.5 }]);
   assert.deepEqual(parseBilligerHistory('<html></html>'), []);
 });
+
+import { hitsFromJsonLd, hitsFromLinks } from '../src/adapters/searchshops.ts';
+test('Shop-Suche: Treffer aus JSON-LD und Links', () => {
+  const ld = `<script type="application/ld+json">{"@type":"ItemList","itemListElement":[{"@type":"ListItem","item":{"@type":"Product","name":"LG OLED77G68LW","url":"/p/123","offers":{"price":"2599.00"}}}]}</script>`;
+  assert.deepEqual(hitsFromJsonLd(ld, 'https://shop.de'), [{ title: 'LG OLED77G68LW', url: 'https://shop.de/p/123', price: 2599 }]);
+  const links = `<a href="/product/lg-oled77g68lw-123.html" title="LG OLED77G68LW 77 Zoll">x</a><a href="/hilfe">Hilfe und Kontakt</a>`;
+  assert.deepEqual(hitsFromLinks(links, 'https://shop.de', /\/product\//).map((h) => h.url), ['https://shop.de/product/lg-oled77g68lw-123.html']);
+});
