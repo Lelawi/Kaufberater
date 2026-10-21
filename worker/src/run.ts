@@ -40,7 +40,11 @@ export async function runAll(arg = '') {
     await step('autothresholds', async () => { const r = await runAutoThresholds({ productId }); if (r.set) await runEvaluate({ productId }); return r; });
     if (mode === 'all') await step('digest', () => runDigest());
     await step('alerts', () => deliverAlerts());
-    if (mode === 'all' && new Date().getMinutes() < 15) await step('cleanup', () => cleanup());
+    // Aufräumen einmal am Tag (nicht an die Uhrzeit koppeln – GitHub startet Läufe oft verspätet)
+    if (mode === 'all') {
+      const [done] = await sql`select 1 from kb_runs where stats ? 'cleanup' and started_at > now() - interval '20 hours' limit 1`;
+      if (!done) await step('cleanup', () => cleanup());
+    }
   } finally {
     result.http = httpStats();
     await sql`update kb_runs set finished_at = now(), stats = ${sql.json(result as any)} where id = ${run[0].id}`;
