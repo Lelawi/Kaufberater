@@ -78,6 +78,17 @@ async function main() {
       case 'run': { const { runAll } = await import('./run.ts'); await runAll(arg); break; }
       case 'adapter': { const { testAdapter } = await import('./devtools.ts'); await testAdapter(arg); break; }
       case 'deals': { const { testDeals } = await import('./devtools.ts'); await testDeals(arg); break; }
+      case 'apnsprobe': {
+        // Verbindung zu Apples Push-Dienst testen – mit Fantasie-Schlüssel muss Apple sauber ablehnen (403 InvalidProviderToken)
+        const { useApnsConfig, sendApns, closeApns } = await import('./util/apns.ts');
+        const { generateKeyPairSync } = await import('node:crypto');
+        const key = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+        useApnsConfig({ key, key_id: 'ABCDEFGHIJ', team_id: 'ABCDEFGHIJ' });
+        const r = await sendApns('0'.repeat(64), { title: 'Test', body: 'Test' });
+        console.log(`::notice::APNs-Probe: Status ${r.status}, Grund ${r.reason}`);
+        closeApns();
+        break;
+      }
       case 'homecheck': {
         // Wenn der Raspberry Pi in den letzten 30 Minuten gelaufen ist, macht GitHub Pause (spart Freiminuten)
         const sql = await db();

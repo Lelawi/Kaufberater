@@ -66,3 +66,19 @@ test('Aktionstage', () => {
   const n = nextShoppingEvent(new Date('2026-10-21T10:00:00Z'))!;
   assert.equal(n.name, 'Singles Day');
 });
+
+import { normalizePem, token } from '../src/util/apns.ts';
+import { generateKeyPairSync, verify } from 'node:crypto';
+test('Apple-Push-Schlüssel: verunstaltet eingefügt → trotzdem gültige Signatur', () => {
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+  const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  const messy = '  ' + pem.replace(/\n/g, ' ') + '  ';                          // alles in einer Zeile
+  const bare = pem.replace(/-----[A-Z ]+-----/g, '').replace(/\s/g, '');        // ohne Kopf/Fuß
+  for (const k of [pem, messy, bare]) {
+    const jwt = token({ key: normalizePem(k), key_id: 'ABC123DEFG', team_id: 'TEAM123456' });
+    const [h, c, s] = jwt.split('.');
+    assert.equal(JSON.parse(Buffer.from(h, 'base64url').toString()).kid, 'ABC123DEFG');
+    assert.equal(JSON.parse(Buffer.from(c, 'base64url').toString()).iss, 'TEAM123456');
+    assert.ok(verify('sha256', Buffer.from(`${h}.${c}`), { key: publicKey, dsaEncoding: 'ieee-p1363' }, Buffer.from(s, 'base64url')));
+  }
+});

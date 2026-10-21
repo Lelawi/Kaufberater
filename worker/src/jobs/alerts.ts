@@ -60,6 +60,7 @@ export async function deliverAlerts() {
   const pushOk = await initVapid();
   const apnsOk = await apnsReady();
   const mailer = await getMailer();
+  let apnsKeyError: string | null = null;
   for (const a of pending) {
     const quiet = a.level !== 'instant' && inQuietHours(a.quiet_from, a.quiet_to);
     if (quiet) continue;
@@ -75,7 +76,11 @@ export async function deliverAlerts() {
         });
         if (r.status === 200) { sent = true; stats.push++; await sql`update kb_push_subscriptions set last_ok_at = now(), fail_count = 0 where id = ${d.id}`; }
         else if (r.status === 410 || (r.status === 400 && /BadDeviceToken|DeviceTokenNotForTopic/.test(r.reason ?? ''))) {
+          // Gerät abgemeldet / App gelöscht – die App meldet sich beim nächsten Start mit neuem Token wieder an
           await sql`delete from kb_push_subscriptions where id = ${d.id}`;
+        } else if (r.status === 403 || /ProviderToken|TopicDisallowed/.test(r.reason ?? '')) {
+          // Problem mit dem Schlüssel, nicht mit dem Gerät → Gerät behalten, einmal pro Tag Bescheid geben
+          stats.failed++; apnsKeyError = r.reason ?? String(r.status);
         } else { stats.failed++; console.log('APNs:', r.status, r.reason); await sql`update kb_push_subscriptions set fail_count = fail_count + 1 where id = ${d.id}`; }
       }
     }
@@ -108,6 +113,15 @@ export async function deliverAlerts() {
     void sent;
   }
   closeApns();
+  if (apnsKeyError) {
+    const day = new Date().toISOString().slice(0, 10);
+    for (const u of new Set(pending.map((a) => a.user_id as string))) {
+      await createAlert({ userId: u, productId: null, kind: 'system', level: 'warning',
+        title: 'iPhone-Mitteilungen: Apple lehnt den Push-Schlüssel ab',
+        body: `Apple meldet „${apnsKeyError}“. Bitte in den Einstellungen → Einrichtung den Apple-Push-Schlüssel (.p8), die Key-ID und die Team-ID prüfen und neu eintragen.`,
+        url: null, dedupKey: `apnskey:${day}` });
+    }
+  }
   return stats;
 }
 

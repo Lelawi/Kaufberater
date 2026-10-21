@@ -54,6 +54,23 @@ jobs:
           xcrun simctl io "$DEV" screenshot shots/3-dunkel.png
           cd shots && git init -q -b shots && git add -A && git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm shots
           git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" shots:shots
+      - name: Probe-Archiv fürs iPhone (Release, ohne Signatur)
+        if: env.HAS_ASC != 'true'
+        run: |
+          cd ios
+          xcodebuild -project Kaufberater.xcodeproj -scheme Kaufberater -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -archivePath build/Probe.xcarchive CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} archive > probe.log 2>&1 \
+            || { grep -E "error:" probe.log | sort -u | head -30 | sed 's/^/::error::/'; tail -40 probe.log; exit 1; }
+          PL=build/Probe.xcarchive/Products/Applications/Kaufberater.app/Info.plist
+          for k in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion CFBundleIconName MinimumOSVersion; do
+            v=$(/usr/libexec/PlistBuddy -c "Print :$k" "$PL" 2>/dev/null || echo FEHLT)
+            echo "::notice::Info.plist $k = $v"
+            [ "$v" = FEHLT ] && echo "::error::$k fehlt in der fertigen App"
+          done
+          ls build/Probe.xcarchive/Products/Applications/Kaufberater.app/ | tr '\n' ' ' | sed 's/^/::notice::Inhalt: /'; echo
+          grep -q "AppIcon60x60@2x.png\|Assets.car" <<< "$(ls build/Probe.xcarchive/Products/Applications/Kaufberater.app/)" || echo "::error::App-Symbol fehlt"
+          echo "::notice::Probe-Archiv erfolgreich – Signieren/Hochladen klappt, sobald die Apple-Schlüssel hinterlegt sind"
       - name: Apple-Account vorbereiten
         if: env.HAS_ASC == 'true'
         env:
