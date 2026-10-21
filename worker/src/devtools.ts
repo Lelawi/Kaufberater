@@ -11,6 +11,7 @@ export async function testAdapter(arg: string) {
       const good = c.filter((x) => x.score >= 0.75).sort((x, y) => y.score - x.score);
       console.log(`::notice::${s.key}: ${c.length} Treffer, ${good.length} passend: ` + good.slice(0, 4).map((x) => `${x.score.toFixed(2)} ${x.title.slice(0, 50)} [${x.externalId}]`).join(' | '));
       if (a.fetch && good[0]) {
+        console.log(`::notice::${s.key} hole ${good[0].url}`);
         const offers = await s.fetch({ id: 't', source: s.key, country: good[0].country, external_id: good[0].externalId, url: good[0].url, condition: good[0].condition ?? 'new', title: good[0].title }, a.query);
         console.log(`::notice::${s.key} Angebote: ` + offers.slice(0, 8).map((o) => `${o.shop} ${o.price}+${o.shipping ?? '?'} ${o.condition}`).join(' | '));
       }
