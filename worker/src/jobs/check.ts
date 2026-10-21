@@ -55,7 +55,19 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
           { id: l.id, source: l.source, country: l.country, external_id: l.external_id, url: l.url, condition: l.condition, title: l.title },
           toQuery({ id: l.product_id, name: l.p_name, brand: l.p_brand, model: l.p_model, ean: l.p_ean, search_terms: l.p_terms, exclude_terms: l.p_exclude }),
         );
-        const r = await saveOffers(l, plausibleOffers(offers.filter((o) => o.shipsToDE !== false && o.price > 0)));
+        const usable = plausibleOffers(offers.filter((o) => o.shipsToDE !== false && o.price > 0));
+        // Preisvergleich liefert plötzlich (fast) nichts, obwohl vorher viele Angebote da waren → Seite vermutlich unvollständig.
+        // Dann nichts als „verschwunden“ markieren, sondern bald noch einmal versuchen.
+        if (adapter.kind === 'aggregator' && usable.length <= 1) {
+          const [{ n }] = await sql`select count(*)::int as n from kb_offers where listing_id = ${l.id} and not gone`;
+          if (n >= 4) {
+            stats.errors++;
+            await sql`update kb_listings set last_checked_at = now(), last_error = ${'Seite ohne Angebotsliste – wird wiederholt'},
+                       next_check_at = now() + interval '20 minutes' where id = ${l.id}`;
+            continue;
+          }
+        }
+        const r = await saveOffers(l, usable);
         // Nur per Link eingetragen? Dann den richtigen Produktnamen von der Seite übernehmen und danach überall suchen
         const pageTitle = offers.find((o) => o.title)?.title;
         if (l.p_name_auto && pageTitle) {

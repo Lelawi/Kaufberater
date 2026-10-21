@@ -1,4 +1,5 @@
 // idealo.de: Preisvergleich mit hunderten Händlern (inkl. MediaMarkt, Otto, Amazon …), erreichbar aus Rechenzentren
+import { debugLog } from '../db.ts';
 import { fetchPage } from '../util/http.ts';
 import { loadHtml, extractProduct } from '../util/extract.ts';
 import { matchTitle, searchQuery, type ProductQuery } from '../util/match.ts';
@@ -82,6 +83,10 @@ async function fetchOffers(l: ListingRef): Promise<OfferData[]> {
   const p = await fetchPage(l.url, { minDelayMs: 3000 });
   const offers = parseIdealoOffers(p.text, p.url);
   if (!offers.length) {
+    // Zur Fehlersuche festhalten, wie die leere Seite aussah (idealo liefert gelegentlich Seiten ohne Angebotsliste)
+    const title = p.text.match(/<title[^>]*>([^<]*)/i)?.[1]?.trim() ?? '';
+    await debugLog('idealo-leer', { url: l.url, finalUrl: p.url, body: p.text.slice(0, 300_000),
+      note: JSON.stringify({ bytes: p.text.length, title, hasList: /productOffers-list/.test(p.text), captcha: /captcha|challenge|robot/i.test(p.text) }) });
     // Produkt ohne Angebote oder Seitenaufbau geändert → Bestpreis aus Produktdaten
     const info = extractProduct(p.text);
     if (info?.price) {
