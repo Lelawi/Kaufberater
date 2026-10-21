@@ -93,3 +93,14 @@ test('Modellnummer aus Text raten', () => {
   assert.equal(guessModel('Dyson V15 Detect Absolute'), null);
   assert.equal(guessModel('Philips Hue 4K 120Hz Sync Box 2024'), null);
 });
+
+import { plausibleOffers, isRental } from '../src/util/plausible.ts';
+test('Mietangebote und Ausreißer aussortieren', () => {
+  const o = (shop: string, price: number, extra: any = {}) => ({ offerKey: shop, shop, country: 'DE', condition: 'new' as const, price, ...extra });
+  const list = [o('grover.com', 13.99), o('Amazon', 329, { shopReviews: 90000 }), o('MediaMarkt', 339), o('Otto', 349), o('Saturn', 339),
+    o('billig-xyz.de', 49, { shopReviews: 3 }), o('Amazon Preisfehler', 99, { shopReviews: 90000 }), o('Shop', 19.9, { title: 'Sony WH-1000XM6 mieten ab 19,90 €/Monat' })];
+  const keep = plausibleOffers(list).map((x) => x.shop);
+  assert.deepEqual(keep, ['Amazon', 'MediaMarkt', 'Otto', 'Saturn', 'Amazon Preisfehler']);
+  assert.equal(isRental({ shop: 'expert.de', title: 'LG OLED77G68LW – Payback Punkte sammeln' }), false);
+  assert.equal(isRental({ shop: 'otto.de', title: 'LG OLED77G6 – Finanzierung ab 89 € pro Monat', price: 2799 }, 2800), false);
+});

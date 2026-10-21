@@ -7,6 +7,7 @@ import { billigerAdapter } from '../adapters/billiger.ts';
 import { pepperAdapters } from '../adapters/pepper.ts';
 import { matchTitle, guessModel, type ProductQuery } from '../util/match.ts';
 import type { OfferData } from '../adapters/types.ts';
+import { plausibleOffers } from '../util/plausible.ts';
 import { fmtEur, parsePrice } from '../util/money.ts';
 import { createAlert } from './alerts.ts';
 import { IS_HOME } from '../adapters/registry.ts';
@@ -72,7 +73,7 @@ async function check(input: string, userId: string) {
       const c = cands[0];
       if (!c) return;
       const offers = await s.ad.fetch({ id: 'qc', source: s.src, country: 'DE', external_id: c.externalId, url: c.url, condition: 'new' }, q);
-      compare.push({ src: s.src, title: c.title, url: c.url, offers: offers.filter((o) => o.condition === 'new' && o.price > 0 && o.shipsToDE !== false) });
+      compare.push({ src: s.src, title: c.title, url: c.url, offers: plausibleOffers(offers.filter((o) => o.condition === 'new' && o.price > 0 && o.shipsToDE !== false)) });
     } catch (e) { console.log(`Schnellcheck ${s.src}:`, (e as Error).message); }
   }));
   // Nur vertrauenswürdige Shops als Maßstab (gleiche Regel wie bei der Überwachung)

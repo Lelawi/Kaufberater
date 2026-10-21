@@ -5,6 +5,7 @@ import { needsHomeUrl } from '../adapters/shops.ts';
 import { toQuery } from '../products.ts';
 import { blockedSources, recordSourceResult } from './health.ts';
 import type { OfferData } from '../adapters/types.ts';
+import { plausibleOffers } from '../util/plausible.ts';
 
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
@@ -51,7 +52,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
           { id: l.id, source: l.source, country: l.country, external_id: l.external_id, url: l.url, condition: l.condition, title: l.title },
           toQuery({ id: l.product_id, name: l.p_name, brand: l.p_brand, model: l.p_model, ean: l.p_ean, search_terms: l.p_terms, exclude_terms: l.p_exclude }),
         );
-        const r = await saveOffers(l, offers.filter((o) => o.shipsToDE !== false && o.price > 0));
+        const r = await saveOffers(l, plausibleOffers(offers.filter((o) => o.shipsToDE !== false && o.price > 0)));
         // Nur per Link eingetragen? Dann den richtigen Produktnamen von der Seite übernehmen und danach überall suchen
         const pageTitle = offers.find((o) => o.title)?.title;
         if (l.p_name_auto && pageTitle) {
