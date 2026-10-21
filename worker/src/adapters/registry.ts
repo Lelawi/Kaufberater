@@ -8,15 +8,19 @@ import { amazonAdapters } from './amazon.ts';
 import { pepperAdapters } from './pepper.ts';
 import { refurbedAdapter } from './refurbed.ts';
 import { ebayAdapter, ebayConfigured } from './ebay.ts';
+import { check24Adapter } from './check24.ts';
+import { shopSearchAdapters } from './shopconfigs.ts';
 
 export const SOURCES: SourceAdapter[] = [
   ...geizhalsAdapters,
   idealoAdapter,
   billigerAdapter,
+  check24Adapter,
   ...amazonAdapters,
   refurbedAdapter,
   // eBay nur mit Zugangsschlüsseln (GitHub-Secrets EBAY_APP_ID / EBAY_CERT_ID)
   ...(ebayConfigured() ? [ebayAdapter] : []),
+  ...shopSearchAdapters,
   ...shopSources,
 ];
 

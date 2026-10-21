@@ -59,7 +59,15 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   }
 
   // Zubehör erkennen (nur wenn das Produkt selbst kein solches Wort enthält)
-  const acc = ACCESSORY.find((a) => tw.has(a) && !pw.has(a));
+  // Zubehör-Wort zählt nur, wenn es vor der Modellnummer steht („Wandhalterung für OLED77G6“) –
+  // in der Ausstattungsliste dahinter („OLED77G67LW, 195 cm, Wandhalterung“) ist es kein Zubehör-Artikel
+  const keyPos = (() => { const T = title.toUpperCase().replace(/[^A-Z0-9]/g, ''); const ps = modelKeys(p).map((k) => T.indexOf(k)).filter((i) => i >= 0); return ps.length ? Math.min(...ps) : -1; })();
+  const accBeforeModel = (a: string) => {
+    if (keyPos < 0) return true;
+    const T = norm(title); const i = T.indexOf(norm(a));
+    return i >= 0 && i < keyPos;
+  };
+  const acc = ACCESSORY.find((a) => tw.has(a) && !pw.has(a) && accBeforeModel(a));
   const forPattern = /\b(für|fur|for|pour|para|per)\b/i.test(title) && !/\b(für|for|pour)\b/i.test(p.name);
   let penalty = 1;
   let penaltyReason = '';

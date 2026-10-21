@@ -82,6 +82,19 @@ function deepGet(o: any, path: string): any {
   return path.split('.').reduce((x, k) => (x == null ? x : x[k]), o);
 }
 
+/** Rückfall: Angebot als eigener JSON-LD-Knoten (nicht im Produkt verschachtelt), Titel aus dem Produkt-Knoten */
+export function offerNode(html: string, url: string): OfferData | null {
+  const nodes = jsonLdNodes(html);
+  const offer = nodes.find((n) => n['@type'] === 'Offer' && parsePrice(n.price));
+  if (!offer) return null;
+  const prod = nodes.find((n) => n['@type'] === 'Product');
+  const title = cleanText(prod?.name ?? loadHtml(html)('h1').first().text());
+  return {
+    offerKey: 'page', shop: new URL(url).hostname, country: 'DE', condition: conditionFromTitle(title), title, url,
+    price: parsePrice(offer.price)!, inStock: /InStock|LimitedAvailability|PreOrder/i.test(String(offer.availability ?? '')) ? true : /OutOfStock|SoldOut|Discontinued/i.test(String(offer.availability ?? '')) ? false : null,
+  };
+}
+
 export function makeSearchShop(cfg: SearchShopConfig): SourceAdapter {
   const delay = cfg.minDelayMs ?? 4000;
   return {
@@ -109,7 +122,7 @@ export function makeSearchShop(cfg: SearchShopConfig): SourceAdapter {
     },
     async fetch(l: ListingRef): Promise<OfferData[]> {
       const p = await fetchPage(l.url, { country: cfg.country, minDelayMs: delay });
-      const o = cfg.parseProduct ? cfg.parseProduct(p.text, p.url) : parseShopPage(p.text, p.url);
+      const o = (cfg.parseProduct ? cfg.parseProduct(p.text, p.url) : parseShopPage(p.text, p.url)) ?? offerNode(p.text, p.url);
       if (!o) throw new Error('kein Preis auf der Seite gefunden');
       o.shop = cfg.label;
       o.country = cfg.country;

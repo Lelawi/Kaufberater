@@ -150,3 +150,9 @@ test('eBay-Angebote auswerten', () => {
   assert.equal(o[0].shopRating, 5); assert.equal(o[0].shopReviews, 15230); assert.equal(o[0].shipping, 0);
   assert.equal(ebayCondition('1500'), 'bware'); assert.equal(ebayCondition('3000'), 'used');
 });
+
+test('Zubehör-Wort in der Ausstattung ist kein Zubehör-Artikel', () => {
+  const q = { name: 'LG OLED77G6', model: 'OLED77G6' };
+  assert.ok(matchTitle(q, 'LG OLED77G67LW.AEUD, OLED-Fernseher 195 cm (77 Zoll), Wandhalterung, 120Hz Panel').score >= 0.9);
+  assert.ok(matchTitle(q, 'Wandhalterung für LG OLED77G6 schwenkbar').score < 0.5);
+});
