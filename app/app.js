@@ -232,7 +232,7 @@ document.addEventListener('error', (e) => {
 
 // ---------- Eintragen / Bearbeiten ----------
 async function viewEdit(id, params = new URLSearchParams()) {
-  let p = { name: '', brand: '', model: '', ean: '', notes: '', window_type: 'soft', include_refurb: true, want_alternative: true, search_terms: [], exclude_terms: [], quantity: 1 };
+  let p = { name: '', brand: '', model: '', ean: '', notes: '', window_type: 'soft', include_refurb: false, want_alternative: true, search_terms: [], exclude_terms: [], quantity: 1 };
   if (id) {
     loading();
     const { data, error } = await sb.from('kb_products').select('*').eq('id', id).single();
