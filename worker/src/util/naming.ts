@@ -84,3 +84,40 @@ export function variantSuggestions(name: string, cands: { id: string; title: str
   }
   return [...groups.values()].sort((a, b) => (a.key === '' ? -1 : b.key === '' ? 1 : b.count - a.count)).slice(0, 5);
 }
+
+/**
+ * Unscharfer Vergleich für die Produkt-Erkennung, wenn nichts exakt passt
+ * („Bosch Heizungsthermostat Matter“ ↔ „Bosch Smart Home Heizkörper-Thermostat II [+M] (Matter)“).
+ * Wort zählt voll, wenn es im Titel vorkommt (auch über Bindestriche/Leerzeichen hinweg), halb, wenn ein
+ * langer Wortteil (≥ 6 Zeichen, z. B. „thermostat“ in „heizungsthermostat“) vorkommt.
+ */
+export function fuzzyScore(name: string, title: string): number {
+  // Abkürzungen in Shop-Titeln: „[+M]“ = Matter
+  const t = fold(title).replace(/\[\s*\+\s*m\s*\]|\(\s*\+\s*m\s*\)/g, ' matter ').replace(/[^a-z0-9]/g, '');
+  const words = fold(name).split(/[^a-z0-9]+/).filter((w) => w.length >= 2);
+  if (!words.length || !t) return 0;
+  let sum = 0;
+  for (const w of words) {
+    if (t.includes(w)) { sum += 1; continue; }
+    let best = 0;
+    for (let len = Math.min(w.length - 1, 14); len >= 6 && !best; len--) {
+      for (let i = 0; i + len <= w.length; i++) if (t.includes(w.slice(i, i + len))) { best = len / w.length; break; }
+    }
+    sum += best >= 0.45 ? 0.6 : 0;
+  }
+  return Math.round((sum / words.length) * 100) / 100;
+}
+
+export interface IdentifyOption { label: string; title: string; url: string; source: string; score: number; price?: number | null; kind: 'identify' }
+
+/** Bis zu fünf unterschiedliche Produkte zur Auswahl („Meinst du …?“), bestes zuerst */
+export function identifyOptions(name: string, cands: { title: string; url: string; source: string; price?: number | null }[]): IdentifyOption[] {
+  const seen = new Set<string>();
+  return cands
+    .map((c) => ({ ...c, score: fuzzyScore(name, c.title) }))
+    .filter((c) => c.score >= 0.5)
+    .sort((a, b) => b.score - a.score || (a.title.length - b.title.length))
+    .filter((c) => { const k = fold(coreTitle(c.title)).replace(/[^a-z0-9]/g, ''); if (seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, 5)
+    .map((c) => ({ label: coreTitle(c.title) || c.title, title: c.title, url: c.url, source: c.source, score: c.score, price: c.price ?? null, kind: 'identify' as const }));
+}

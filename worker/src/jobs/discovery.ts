@@ -3,9 +3,9 @@ import { db } from '../db.ts';
 import { SOURCES, availableHere } from '../adapters/registry.ts';
 import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
-import type { Candidate } from '../adapters/types.ts';
+import type { Candidate, SourceAdapter } from '../adapters/types.ts';
 import { variantCodes, modelKeys, packQueries } from '../util/match.ts';
-import { cleanName, variantSuggestions } from '../util/naming.ts';
+import { cleanName, variantSuggestions, identifyOptions } from '../util/naming.ts';
 import { ebayConfigured } from '../adapters/ebay.ts';
 
 const MIN_SCORE = 0.75;
@@ -77,6 +77,10 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
               discovery_at = ${failed > 0 ? sql`now() - interval '7 days' + interval '6 hours'` : sql`now()`},
               search_terms = ${[...(p.search_terms ?? []), ...newTerms]} where id = ${p.id}`;
     await tidyName(p, goodTitles).catch((e) => console.log('Name:', (e as Error).message));
+    // Nichts eindeutig gefunden (z. B. „Bosch Heizungsthermostat Matter“ statt „Heizkörper-Thermostat II [+M]“):
+    // ähnliche Produkte zur Auswahl anbieten
+    const all = results.flatMap((r) => (r.status === 'fulfilled' ? r.value.cands.map((c: Candidate) => ({ title: c.title ?? '', url: c.url, source: r.value.source.key, price: c.price ?? null })) : []));
+    await offerChoices(p, all, sources).catch((e) => console.log('Auswahl:', (e as Error).message));
   }
   return { products: products.length, listingsAdded };
 }
@@ -96,4 +100,31 @@ async function tidyName(p: ProductRow, titles: string[]) {
   const listings = await sql`select id, title from kb_listings where product_id = ${p.id} and not rejected and active and title is not null and match_score >= 0.75`;
   const sugg = variantSuggestions(p.name, listings.map((l) => ({ id: l.id as string, title: l.title as string })));
   await sql`update kb_products set name_suggestions = ${sugg.length > 1 ? sql.json(sugg as any) : null} where id = ${p.id} and not name_confirmed`;
+}
+
+/** Keine passende Quelle → bis zu fünf ähnliche Produkte als Auswahl speichern (App fragt „Meinst du …?“) */
+async function offerChoices(p: ProductRow, cands: { title: string; url: string; source: string; price: number | null }[], sources: SourceAdapter[]) {
+  if (p.name_confirmed || p.name_auto) return;
+  const sql = await db();
+  const [{ n }] = await sql`select count(*)::int as n from kb_listings where product_id = ${p.id} and not rejected and match_score >= 0.75`;
+  if (n > 0) return;
+  let opts = identifyOptions(p.name, cands);
+  if (opts.length < 3) {
+    // Lockerer suchen: jeweils ein Wort weglassen und lange zusammengesetzte Wörter kürzen (Heizungsthermostat → Thermostat)
+    const words = p.name.split(/\s+/).filter(Boolean);
+    const variants = new Set<string>();
+    for (let i = 0; i < words.length && words.length > 2; i++) variants.add(words.filter((_, j) => j !== i).join(' '));
+    variants.add(words.map((w) => (w.length >= 12 ? w.slice(-Math.ceil(w.length / 2)) : w)).join(' '));
+    const agg = sources.filter((s) => s.kind === 'aggregator' && s.search);
+    const q = toQuery(p);
+    for (const v of [...variants].slice(0, 4)) {
+      for (const s of agg) {
+        try { for (const c of await s.search!({ ...q, name: v, model: null, terms: [] })) cands.push({ title: c.title ?? '', url: c.url, source: s.key, price: c.price ?? null }); }
+        catch { /* Quelle gerade nicht erreichbar */ }
+      }
+      opts = identifyOptions(p.name, cands);
+      if (opts.length >= 5) break;
+    }
+  }
+  await sql`update kb_products set name_suggestions = ${opts.length ? sql.json(opts as any) : null} where id = ${p.id} and not name_confirmed`;
 }

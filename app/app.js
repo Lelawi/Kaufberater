@@ -452,6 +452,17 @@ async function viewProduct(id) {
     try { localStorage.setItem('kb-range', r.value); } catch { /* */ }
     document.getElementById('chartBox').innerHTML = String(chartFor(seriesR.data ?? [], p, a?.price_history));
   }));
+  document.getElementById('identOk')?.addEventListener('click', async (e) => {
+    const s = p.name_suggestions?.[Number(view.querySelector('#which input[name=ident]:checked')?.value ?? 0)];
+    if (!s) return;
+    e.target.disabled = true;
+    // Gewähltes Produkt übernehmen: sauberer Name, Quelle sofort überwachen, mit dem neuen Namen überall neu suchen
+    const { error } = await sb.from('kb_products').update({ name: s.label, name_confirmed: true, name_suggestions: null, image_url: null,
+      discovery_status: 'pending', analysis_status: 'queued', analysis_due_at: new Date().toISOString() }).eq('id', id);
+    if (error) { e.target.disabled = false; return toast(error.message); }
+    await sb.rpc('kb_add_listing', { p_product: id, p_url: s.url });
+    toast('Übernommen – die Preissuche startet gleich'); route();
+  });
   document.getElementById('whichOk')?.addEventListener('click', () => {
     const picked = [...view.querySelectorAll('#which input:checked')].map((x) => Number(x.value));
     if (!picked.length) return toast('Bitte mindestens eines auswählen');
@@ -516,6 +527,15 @@ async function viewProduct(id) {
 
 /** Rückfrage: Welches Produkt ist gemeint? (mehrere Varianten passen zum eingetippten Namen) */
 function whichProduct(p) {
+  if (p.name_suggestions[0]?.kind === 'identify') {
+    const src = { idealo: 'idealo', billiger: 'billiger.de', check24: 'CHECK24' };
+    return html`<section class="panel" id="which"><h2>Meinst du eines davon?</h2>
+      <p class="hint" style="margin-top:-6px">Zu „${p.name}“ gibt es kein Produkt mit genau diesem Namen. Diese hier kommen am nächsten – tipp das richtige an.</p>
+      <div class="which-list">${p.name_suggestions.map((s, i) => html`<label class="check"><input type="radio" name="ident" value="${i}" ${i === 0 ? 'checked' : ''}> <span><strong>${s.label}</strong>
+        <span class="muted">${s.price ? ` · ab ${fmtEur(s.price)}` : ''} · ${src[s.source] ?? s.source} · <a href="${safeUrl(s.url)}" target="_blank" rel="noopener">ansehen</a></span></span></label>`)}</div>
+      <div class="btn-row" style="margin-top:10px"><button class="btn small" id="identOk">Das ist es</button><a class="btn small ghost" href="#/edit/${p.id}">Keins davon – Namen ändern</a></div>
+    </section>`;
+  }
   return html`<section class="panel" id="which"><h2>Welches Produkt meinst du?</h2>
     <p class="hint" style="margin-top:-6px">Zu „${p.name}“ passen verschiedene Produkte. Wähle aus, was du beobachten willst – Angebote der anderen fallen dann weg.</p>
     <div class="which-list">${p.name_suggestions.map((s, i) => html`<label class="check"><input type="checkbox" value="${i}" ${i === 0 ? 'checked' : ''}> <span><strong>${s.label}</strong> <span class="muted">· ${s.count} Quelle${s.count === 1 ? '' : 'n'}</span></span></label>`)}</div>
