@@ -47,6 +47,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         await sql`delete from kb_deals where product_id = ${p.id} and title ilike any(${pats})`;
       }
     }
+    // Angebote abgelehnter Quellen zählen nicht (auch wenn ihr Titel das Ausschlusswort nicht enthält)
+    await sql`update kb_offers o set gone = true from kb_listings l where l.id = o.listing_id and l.rejected and o.product_id = ${p.id} and not o.gone`;
     // Preisverlauf von abgewählten/falschen Quellen entfernen – sonst verfälschen deren Preise Diagramm, Tiefstpreis und Schwellen
     const h1 = await sql`delete from kb_price_history h using kb_offers o, kb_listings l
                          where h.product_id = ${p.id} and h.offer_id = o.id and o.listing_id = l.id and l.rejected`;
@@ -65,7 +67,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     }
     const offers = await sql<Offer[]>`
       select id, product_id, source, shop, country, condition, url, price, shipping, total, list_price, in_stock, title, shop_rating, shop_reviews, pack_size
-      from kb_offers where product_id = ${p.id} and not gone and coalesce(in_stock, true)`;
+      from kb_offers where product_id = ${p.id} and not gone and coalesce(in_stock, true)
+        and listing_id not in (select id from kb_listings where product_id = ${p.id} and rejected)`;
 
     // 1) Effektiver Endpreis je Angebot
     const enriched = offers.map((o) => ({ o, ...effective(o, vouchers, rates) }));
