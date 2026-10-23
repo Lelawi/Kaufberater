@@ -122,7 +122,7 @@ function niceTicks(lo, hi, n) {
 function monthTicks(minD, maxD) {
   const out = []; const d = new Date(minD); d.setDate(1); d.setHours(0, 0, 0, 0); d.setMonth(d.getMonth() + 1);
   const months = (maxD - minD) / (30 * 864e5);
-  const every = months > 18 ? 3 : months > 8 ? 2 : 1;
+  const every = months > 40 ? 6 : months > 18 ? 3 : months > 8 ? 2 : 1;
   while (d.getTime() <= maxD) { if (d.getMonth() % every === 0) out.push(new Date(d)); d.setMonth(d.getMonth() + 1); }
   if (!out.length) out.push(new Date(minD), new Date(maxD));
   return out;

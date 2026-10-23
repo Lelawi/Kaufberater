@@ -274,3 +274,8 @@ details.more > summary { cursor: pointer; color: var(--ink-2); font-weight: 500;
 
 .event-note { margin: -8px 0 16px; padding: 10px 12px; border-left: 4px solid var(--tag); background: var(--surface); border-radius: 0 var(--radius-s) var(--radius-s) 0; font-size: 15px; color: var(--ink-2); }
 .event-note strong { color: var(--ink); }
+
+/* Preisverlauf: Überschrift mit Zeitraum-Auswahl */
+.chart-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.chart-head h2 { margin: 0; }
+.seg.small span { padding: 4px 9px; font-size: 13px; }

@@ -46,13 +46,15 @@ Stand der Erreichbarkeit (geprüft 21.10.2026 von GitHub-Actions aus): siehe Tab
 | idealo.de (hunderte Händler) | `idealo.ts` | GitHub + Pi |
 | billiger.de (+ ca. 6 Monate Preisverlauf) | `billiger.ts` | GitHub + Pi |
 | CHECK24 Preisvergleich (inkl. Amazon, MediaMarkt, Otto, Galaxus, Kaufland, Cyberport …; + Preisverlauf). Produktseiten antworten gelegentlich mit 403 → 30 Min. Pause, dann erneut | `check24.ts` | GitHub + Pi |
-| Shops mit eigener Suche: Coolblue, Alternate, Berlet, Medimax, jacob, technikdirekt, BAUR, Quelle, voelkner, rebuy (gebraucht), HiFi-Profis (Shopify) | `shopconfigs.ts` (Baustein `searchshops.ts`) | GitHub + Pi |
+| Shops mit eigener Suche: Coolblue, Alternate, Berlet, Medimax, jacob, technikdirekt, BAUR, Quelle, voelkner, rebuy (gebraucht), HiFi-Profis (Shopify), OBI | `shopconfigs.ts` (Baustein `searchshops.ts`) | GitHub + Pi |
 | eBay (offizielle Browse-API, nur mit `EBAY_APP_ID`/`EBAY_CERT_ID`) | `ebay.ts` | GitHub + Pi |
 | Pepper-Portale (DE/AT/FR/ES/IT) | `pepper.ts` | GitHub + Pi |
 | Einzelne Shop-Seiten mit Produktdaten (Links aus Analyse/Eintragen) | `shops.ts` | GitHub + Pi |
 | Amazon DE/FR/IT/ES/NL | `amazon.ts` | nur Pi (blockt Rechenzentren) |
 | Geizhals | `geizhals.ts` | nur Pi |
 | MediaMarkt, Saturn, Otto, Cyberport, Kaufland, Galaxus … (Shop-Seiten) | `shops.ts` | nur Pi |
+
+Geprüft 23.10.2026, nicht direkt einbindbar (kommen über die Preisvergleiche herein): Conrad, Euronics, Proshop, computeruniverse, Alza, smartkram, Bauhaus (blocken Rechenzentren); tink, Lampenwelt, Lidl, toom, notebooksbilliger (Suche nur per Skript/Such-Dienst). Einzelne Produktseiten dieser Shops lassen sich aber als Link überwachen.
 
 Bewusst nicht genutzt: Proxy-Dienste, Captcha-Löser, Tarn-Browser (Umgehung von Bot-Schutz). Amazon-API (Creators API) braucht 10 Partner-Verkäufe/30 Tage – für Privatnutzung nicht erreichbar; Keepa-API kostet Geld.
 Weitere Ideen (Recherche 21.10.): Keepa/camelcamelcamel-Preisalarme als RSS, Geizhals-/idealo-Preisalarm-Mails per IMAP auslesen, Klarna-Preisvergleich (nur mit Browser).

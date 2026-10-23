@@ -333,7 +333,7 @@ async function viewProduct(id) {
     sb.from('kb_offers').select('*').eq('product_id', id).eq('gone', false).order('effective_total', { ascending: true, nullsFirst: false }),
     sb.from('kb_deals').select('*').eq('product_id', id).order('posted_at', { ascending: false, nullsFirst: false }).limit(40),
     sb.from('kb_analyses').select('*').eq('product_id', id).order('created_at', { ascending: false }).limit(1),
-    sb.rpc('kb_price_series', { p_product: id, p_days: 730 }),
+    sb.rpc('kb_price_series', { p_product: id, p_days: 3700 }),
     sb.from('kb_listings').select('id,source,country,url,title,condition,active,rejected,last_ok_at,last_error,discovered_by,match_score').eq('product_id', id).order('source'),
     sb.from('kb_alerts').select('id').eq('product_id', id).is('read_at', null),
   ]);
@@ -399,7 +399,9 @@ async function viewProduct(id) {
     <div class="btn-row"><button class="btn small" id="saveThr">Schwellen speichern</button>${p.thresholds_manual ? html`<button class="btn small ghost" id="autoThr">Wieder der Analyse überlassen</button>` : ''}</div>
   </section>
 
-  <section class="panel"><h2>Preisverlauf${multi ? html` <span class="muted" style="font-weight:400">pro Stück</span>` : ''}</h2>${raw(priceChart(seriesR.data ?? [], p, a?.price_history))}${seriesLow(seriesR.data ?? [])}</section>
+  <section class="panel"><div class="chart-head"><h2>Preisverlauf${multi ? html` <span class="muted" style="font-weight:400">pro Stück</span>` : ''}</h2>
+    <div class="seg small" role="radiogroup" aria-label="Zeitraum">${RANGES.map(([k, label]) => html`<label><input type="radio" name="range" value="${k}" ${k === chartRange() ? 'checked' : ''}><span>${label}</span></label>`)}</div></div>
+    <div id="chartBox">${raw(chartFor(seriesR.data ?? [], p, a?.price_history))}</div></section>
 
   <section class="panel"><h2>Angebote Neuware <span class="muted" style="font-weight:400">${newOffers.length}</span></h2>
     ${newOffers.length ? offerTable(newOffers, false, multi) : html`<p class="muted">Noch keine.</p>`}</section>
@@ -446,6 +448,10 @@ async function viewProduct(id) {
   </section>`);
 
   // Aktionen
+  view.querySelectorAll('input[name=range]').forEach((r) => r.addEventListener('change', () => {
+    try { localStorage.setItem('kb-range', r.value); } catch { /* */ }
+    document.getElementById('chartBox').innerHTML = String(chartFor(seriesR.data ?? [], p, a?.price_history));
+  }));
   document.getElementById('whichOk')?.addEventListener('click', () => {
     const picked = [...view.querySelectorAll('#which input:checked')].map((x) => Number(x.value));
     if (!picked.length) return toast('Bitte mindestens eines auswählen');
@@ -972,6 +978,20 @@ function b64ToBytes(s) {
   const pad = '='.repeat((4 - (s.length % 4)) % 4);
   const b = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
   return Uint8Array.from(b, (c) => c.charCodeAt(0));
+}
+
+/** Zeitraum des Preisverlaufs (wird gemerkt) */
+const RANGES = [['3m', '3 M', 92], ['6m', '6 M', 183], ['12m', '12 M', 366], ['3j', '3 J', 1096], ['all', 'Alles', null]];
+function chartRange() {
+  try { const v = localStorage.getItem('kb-range'); if (RANGES.some(([k]) => k === v)) return v; } catch { /* */ }
+  return '12m';
+}
+function chartFor(rows, p, analysisHistory) {
+  const days = RANGES.find(([k]) => k === chartRange())?.[2];
+  const from = days ? new Date(Date.now() - days * 864e5).toISOString().slice(0, 10) : '';
+  const r = rows.filter((x) => !from || x.day >= from);
+  const h = (analysisHistory ?? []).filter((x) => !from || (x?.date ?? '') >= from);
+  return html`${raw(priceChart(r, p, h))}${seriesLow(r)}`;
 }
 
 /** Tiefstpreis Neuware im Verlauf (mit Datum) – ab 30 Tagen Daten */

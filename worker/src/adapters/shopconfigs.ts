@@ -169,6 +169,8 @@ function shopify(key: string, label: string, base: string): SourceAdapter {
 export const shopSearchAdapters: SourceAdapter[] = [
   ...CONFIGS.map(makeSearchShop),
   shopify('hifiprofis', 'HiFi-Profis', 'https://www.hifi-profis-da.de'),
+  // OBI (geprüft 23.10.2026): Suchseite mit schema.org-Trefferliste, Produktseiten mit Produktdaten
+  makeSearchShop({ key: 'obi', label: 'OBI', base: 'https://www.obi.de', country: 'DE', searchUrl: (t) => `https://www.obi.de/search/${enc(t)}/` }),
 ];
 
 export { hitsFromJsonLd };
