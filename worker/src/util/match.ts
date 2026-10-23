@@ -51,6 +51,10 @@ const ACCESSORY = [
   'coque', 'etui', 'housse', 'support', 'chargeur', 'cable', 'telecommande', 'funda', 'protector', 'custodia', 'pellicola',
   'kompatibel', 'compatible', 'compatibile', 'passend', 'replacement', 'dummy', 'attrappe', 'mockup', 'leergehause',
 ];
+// Leuchten statt Leuchtmittel (Hue-Leuchtenserien u. a.) – nur ein Treffer, wenn das gesuchte Produkt selbst so heißt
+const FIXTURE = ['leuchte', 'deckenleuchte', 'pendelleuchte', 'stehleuchte', 'tischleuchte', 'wandleuchte', 'einbauspot', 'aufbauspot',
+  'erweiterungsspot', 'strahler', 'lichtleiste', 'buckram', 'pillar', 'adore', 'runner', 'centris', 'argenta', 'fugato', 'xamento', 'milliskin',
+  'centura', 'lily', 'ensis', 'signe', 'flourish', 'devote', 'being', 'enrave', 'still'];
 const VARIANT_WORDS = ['pro', 'max', 'plus', 'ultra', 'mini', 'lite', 'se', 'fe', 'neo', 'air', 'xl', 'slim', 'edge'];
 
 export interface MatchResult { score: number; reason: string }
@@ -78,7 +82,9 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   const forPattern = /\b(für|fur|for|pour|para|per)\b/i.test(title) && !/\b(für|for|pour)\b/i.test(p.name);
   let penalty = 1;
   let penaltyReason = '';
+  const fix = FIXTURE.find((f) => tw.has(f) && !pw.has(f));
   if (acc) { penalty = 0.15; penaltyReason = ` – Zubehör? (${acc})`; }
+  else if (fix) { penalty = 0.5; penaltyReason = ` – Leuchte statt Leuchtmittel? (${fix})`; }
   else if (forPattern) { penalty = 0.6; penaltyReason = ' – "für …" im Titel'; }
 
   // EAN/GTIN eindeutig
@@ -116,8 +122,15 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   // Namensvergleich (für Produkte ohne Modellnummer, z.B. "iPhone 16 Pro 256GB")
   const nameWords = words(p.name).filter((w) => w.length > 1 || /\d/.test(w));
   if (!nameWords.length) return { score: 0, reason: 'kein Name' };
-  const hits = nameWords.filter((w) => tw.has(w) || nt.includes(norm(w)));
+  // Matter-Kennzeichnung: „[+M]“ und „Matter“ sind dasselbe
+  if (tw.has('matter')) tw.add('+m');
+  if (tw.has('+m')) tw.add('matter');
+  // Sehr kurze Wörter („+M“, „II“) nur als ganzes Wort zählen – sonst passt „M“ zu jedem Titel mit einem M
+  const hits = nameWords.filter((w) => tw.has(w) || (norm(w).length >= 3 && nt.includes(norm(w))));
   let score = hits.length / nameWords.length;
+  // Fehlt ein Wort, das eine Variante kennzeichnet („+M“/Matter, Pro, Max …), ist es ein anderes Produkt
+  const missingVariant = nameWords.filter((w) => (VARIANT_WORDS.includes(w) || w === '+m' || w === 'matter') && !hits.includes(w));
+  if (missingVariant.length) score *= 0.6;
   const extraVariant = VARIANT_WORDS.filter((v) => tw.has(v) && !pw.has(v));
   if (extraVariant.length) score *= 0.35;
   if (p.brand && !nt.includes(norm(p.brand)) && !(extra.brand && norm(extra.brand) === norm(p.brand))) score *= 0.7;

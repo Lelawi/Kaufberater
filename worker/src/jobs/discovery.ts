@@ -4,7 +4,7 @@ import { SOURCES, availableHere } from '../adapters/registry.ts';
 import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
 import type { Candidate, SourceAdapter } from '../adapters/types.ts';
-import { variantCodes, modelKeys, packQueries } from '../util/match.ts';
+import { variantCodes, modelKeys, packQueries, matchTitle } from '../util/match.ts';
 import { cleanName, variantSuggestions, identifyOptions } from '../util/naming.ts';
 import { ebayConfigured } from '../adapters/ebay.ts';
 
@@ -77,6 +77,13 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
               discovery_at = ${failed > 0 ? sql`now() - interval '7 days' + interval '6 hours'` : sql`now()`},
               search_terms = ${[...(p.search_terms ?? []), ...newTerms]} where id = ${p.id}`;
     await tidyName(p, goodTitles).catch((e) => console.log('Name:', (e as Error).message));
+    // Früher gefundene Quellen mit dem aktuellen Abgleich neu prüfen (z. B. Fensterkontakt ohne „+M“ bei gesuchtem +M-Modell)
+    const old = await sql`select id, title from kb_listings where product_id = ${p.id} and not rejected and discovered_by = 'search' and title is not null`;
+    const bad = old.filter((l) => matchTitle(toQuery(p), l.title as string).score < 0.5).map((l) => l.id as string);
+    if (bad.length) {
+      await sql`update kb_listings set rejected = true where id = any(${bad}::uuid[])`;
+      await sql`update kb_offers set gone = true where listing_id = any(${bad}::uuid[])`;
+    }
     // Nichts eindeutig gefunden (z. B. „Bosch Heizungsthermostat Matter“ statt „Heizkörper-Thermostat II [+M]“):
     // ähnliche Produkte zur Auswahl anbieten
     const all = results.flatMap((r) => (r.status === 'fulfilled' ? r.value.cands.map((c: Candidate) => ({ title: c.title ?? '', url: c.url, source: r.value.source.key, price: c.price ?? null })) : []));

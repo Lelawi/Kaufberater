@@ -4,6 +4,23 @@ import { ladder, priceChart } from './chart.js';
 
 /** Läuft die Oberfläche in der iPhone-App (statt im Browser)? */
 const NATIVE = window.kbNative?.platform === 'ios' ? window.kbNative : null;
+
+// iPhone-Web-App (Home-Bildschirm): Shop-Links öffnen sonst in einem eingeblendeten Browserfenster, das beim Zurückwechseln
+// stehen bleibt und per ✕ geschlossen werden muss. Ab iOS 17 lassen sie sich direkt in Safari öffnen (x-safari-https://).
+// Klappt das nicht (Seite bleibt sichtbar), wird wie bisher geöffnet.
+{
+  const iosMajor = Number((navigator.userAgent.match(/OS (\d+)_\d/) ?? [])[1] ?? 0);
+  if (!NATIVE && navigator.standalone === true && /iP(hone|ad|od)/.test(navigator.userAgent) && iosMajor >= 17) {
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest?.('a[target="_blank"]');
+      if (!a || !/^https?:/.test(a.href) || new URL(a.href).host === location.host) return;
+      e.preventDefault();
+      const href = a.href;
+      location.href = 'x-safari-' + href;
+      setTimeout(() => { if (document.visibilityState === 'visible') window.open(href, '_blank', 'noopener'); }, 900);
+    });
+  }
+}
 if (NATIVE) {
   // Neuer Token von Apple (z. B. nach Neuinstallation) → speichern
   NATIVE.onPushToken = (token) => { if (session) saveApnsToken(token).catch(() => {}); };
