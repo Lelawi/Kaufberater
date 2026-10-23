@@ -25,6 +25,12 @@ Ablauf eines Worker-Durchlaufs (`worker/src/run.ts`):
 - billiger.de liefert auf der Produktseite ca. 6 Monate Tagestiefstpreise mit (`data-pricehistory-data`) → `series='hist:billiger'` (nur fehlende Tage). Fließt in Diagramm (`kb_price_series`), vorläufige Schwellen (10-%-Tiefpunkt) und die Tiefenanalyse ein.
 - Deals als Punkte (`series='deal:<portal>'`); im Diagramm werden Deals unter 40 % des Bestpreises ausgeblendet (Zubehör/Fehlzuordnung).
 
+## Mengen, Packungen, Namen, Bilder
+- **Stückzahl** (`kb_products.quantity`): Bei > 1 (z. B. 40 Lampen) gelten Bestpreis, Schwellen und Diagramm **pro Stück**; der Höchstpreis gilt für die ganze Menge. `jobs/evaluate.ts` rechnet je Händler die günstigste Kombination aus Packungsgrößen (Versand einmal) → `best_basket`.
+- **Packungsgrößen** (`util/pack.ts`): aus Angebots-/Quellen-/Deal-Titeln („3er-Pack“, „Doppelpack“, „Lot de 3“, „2x 3er-Pack“) → `pack_size` an Angeboten, Deals und Verlauf. Bei Einzelprodukten werden Mehrfachpackungs-Deals nicht mit dem Einzelpreis verglichen; Sets mit Zubehör (Starter-Set, Bridge …) bekommen eine Notiz.
+- **Saubere Namen** (`util/naming.ts`): eingetippter Name bekommt die Schreibweise der Treffer („lg oled77g6“ → „LG OLED77G6“, Original in `name_original`). Ohne Modellnummer und bei mehreren Produktvarianten fragt die App „Welches Produkt meinst du?“ (`name_suggestions`); abgewählte Varianten werden nicht mehr überwacht.
+- **Vorschaubild** (`image_url`): og:image/Produktdaten der abgerufenen Seiten (Preisvergleiche bevorzugt).
+
 ## Schutzmechanismen
 - **Freischaltung:** Nur Konten in `kb_members` dürfen Produkte/Schnellchecks anlegen (Anmeldung ist mit MarsiHome geteilt). Neues Konto freischalten: `insert into kb_members (user_id) values ('<uuid>')`.
 - **Unplausible Angebote** (`util/plausible.ts`): Miet-/Abo-Shops (Grover …) und Preise < 35 % des Mittelwerts von wenig bekannten Shops fliegen raus; Deals von Import-Marktplätzen (AliExpress …) werden markiert und nicht für Schwellen genutzt.
