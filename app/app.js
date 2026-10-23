@@ -1028,7 +1028,11 @@ function chartFor(rows, p, analysisHistory) {
   const from = days ? new Date(Date.now() - days * 864e5).toISOString().slice(0, 10) : '';
   const r = rows.filter((x) => !from || x.day >= from);
   const h = (analysisHistory ?? []).filter((x) => !from || (x?.date ?? '') >= from);
-  return html`${raw(priceChart(r, p, h))}${seriesLow(r)}`;
+  // Hinweis, wenn die eigenen Preisdaten kürzer sind als der gewählte Zeitraum
+  const firstNew = rows.find((x) => x.min_new != null)?.day;
+  const note = firstNew && (!from || firstNew > from)
+    ? html`<p class="hint">Preisdaten der Händler gibt es für dieses Produkt erst seit ${fmtDate(firstNew)}${rows.length && rows[0].day < firstNew ? ' – davor nur Deals' : ''}. Ältere Preise ergänzt die Tiefenanalyse (Quadrate).</p>` : '';
+  return html`${raw(priceChart(r, p, h, { from }))}${note}${seriesLow(r)}`;
 }
 
 /** Tiefstpreis Neuware im Verlauf (mit Datum) – ab 30 Tagen Daten */

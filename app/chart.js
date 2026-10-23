@@ -47,16 +47,18 @@ export function ladder(p, price) {
  * Preisverlauf: Linie Neuware, gestrichelte Linie Refurbished, Punkte für Deals, waagerechte Schwellenlinien.
  * series: [{day, min_new, min_refurb, deal_min}]
  */
-export function priceChart(series, p, analysisHistory = []) {
+export function priceChart(series, p, analysisHistory = [], opts = {}) {
   const pts = series.map((r) => ({ d: new Date(r.day), n: num(r.min_new), r: num(r.min_refurb), deal: num(r.deal_min) }));
   // Verlauf aus der Tiefenanalyse (z.B. Vorgänger/frühere Preise) als zusätzliche Punkte
   const hist = (analysisHistory ?? []).filter((h) => h?.date && h?.price).map((h) => ({ d: new Date(h.date), v: Number(h.price), note: h.note ?? '' }));
   const all = [...pts.flatMap((x) => [x.n, x.r, x.deal]), ...hist.map((h) => h.v), p.threshold_good, p.threshold_top, p.threshold_instant].filter((v) => v);
   const dates = [...pts.map((x) => x.d), ...hist.map((h) => h.d)];
-  if (dates.length < 2 || all.length < 2) return '<p class="muted">Noch zu wenig Daten für einen Verlauf. Nach ein paar Tagen Beobachtung erscheint hier die Kurve.</p>';
+  // Bei gewähltem Zeitraum beginnt die Achse am Anfang des Zeitraums – auch wenn es dort noch keine Daten gibt
+  if (opts.from) dates.push(new Date(opts.from));
+  if (!all.length || (dates.length < 2 && !opts.from)) return '<p class="muted">Noch zu wenig Daten für einen Verlauf. Nach ein paar Tagen Beobachtung erscheint hier die Kurve.</p>';
   // Breite an den Bildschirm anpassen, damit Beschriftungen auf dem Handy lesbar bleiben
   const W = Math.max(300, Math.min(700, (document.getElementById('view')?.clientWidth ?? 640) - 64)); const H = Math.round(Math.max(190, Math.min(260, W * 0.55))); const L = 50; const R = 8; const T = 14; const B = 26;
-  const minD = Math.min(...dates.map(Number)); const maxD = Math.max(...dates.map(Number), Date.now());
+  const minD = opts.from ? Number(new Date(opts.from)) : Math.min(...dates.map(Number)); const maxD = Math.max(...dates.map(Number), Date.now());
   let lo = Math.min(...all); let hi = Math.max(...all);
   const span = hi - lo || hi * 0.1; lo -= span * 0.08; hi += span * 0.08;
   const X = (d) => L + ((Number(d) - minD) / (maxD - minD || 1)) * (W - L - R);
@@ -76,6 +78,9 @@ export function priceChart(series, p, analysisHistory = []) {
   const months = monthTicks(minD, maxD).map((d) => `<text x="${X(d)}" y="${H - 8}" text-anchor="middle">${esc(d.toLocaleDateString('de-DE', { month: 'short', year: maxD - minD > 300 * 864e5 ? '2-digit' : undefined }))}</text>`).join('');
   const thr = [['threshold_instant', 'Sofort', 'var(--tag)'], ['threshold_top', 'Top', 'var(--top)'], ['threshold_good', 'Gut', 'var(--good)']]
     .filter(([k]) => p[k]).map(([k, label, c]) => `<line x1="${L}" x2="${W - R}" y1="${Y(p[k])}" y2="${Y(p[k])}" stroke="${c}" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${L + 4}" y="${Y(p[k]) - 4}" text-anchor="start" style="font:600 11px var(--font-num);fill:var(--ink-2);paint-order:stroke;stroke:var(--surface);stroke-width:3px">${label} ${esc(fmtEur0(p[k]))}</text>`).join('');
+  // Einzelne Tage ohne Nachbarn (z. B. erst seit heute beobachtet) als Punkt zeigen – eine Linie braucht zwei Tage
+  const lone = (key) => pts.filter((x, i) => x[key] !== null && (pts[i - 1]?.[key] ?? null) === null && (pts[i + 1]?.[key] ?? null) === null)
+    .map((x) => `<circle cx="${X(x.d)}" cy="${Y(x[key])}" r="3.5" fill="${key === 'n' ? 'var(--s-new)' : 'var(--s-refurb)'}"><title>${esc(`${fmtDate(x.d)}: ${fmtEur(x[key])}`)}</title></circle>`).join('');
   const deals = pts.filter((x) => x.deal).map((x) => `<circle cx="${X(x.d)}" cy="${Y(x.deal)}" r="4.5" fill="var(--s-deal)" stroke="var(--surface)" stroke-width="2"><title>${esc(`Deal ${fmtDate(x.d)}: ${fmtEur(x.deal)}`)}</title></circle>`).join('');
   const histDots = hist.map((h) => `<rect x="${X(h.d) - 4}" y="${Y(h.v) - 4}" width="8" height="8" rx="1.5" fill="none" stroke="var(--ink-3)" stroke-width="1.8"><title>${esc(`${fmtDate(h.d)}: ${fmtEur(h.v)} ${h.note}`)}</title></rect>`).join('');
   const hasRefurb = pts.some((x) => x.r !== null);
@@ -84,7 +89,7 @@ export function priceChart(series, p, analysisHistory = []) {
     <g class="grid">${grid}</g><g class="axis">${ylab}${months}</g>${thr}
     <path d="${path('n')}" fill="none" stroke="var(--s-new)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     ${hasRefurb ? `<path d="${path('r')}" fill="none" stroke="var(--s-refurb)" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round"/>` : ''}
-    ${histDots}${deals}
+    ${lone('n')}${hasRefurb ? lone('r') : ''}${histDots}${deals}
     <g class="hover" style="display:none"><line y1="${T}" y2="${H - B}" stroke="var(--ink-3)" stroke-width="1"/><circle r="4" fill="var(--s-new)" stroke="var(--surface)" stroke-width="2"/></g>
     <rect class="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
   </svg><div class="chart-tip muted" style="min-height:1.4em;font-size:14px"></div>
