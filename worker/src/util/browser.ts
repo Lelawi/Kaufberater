@@ -53,7 +53,7 @@ export async function browse(url: string, opts: { country?: string; waitFor?: st
     page.on('response', async (res) => {
       try {
         if (opts.captureRe!.test(res.url()) && (res.headers()['content-type'] ?? '').includes('json')) {
-          captured.push({ url: res.url(), data: await res.json() });
+          captured.push({ url: res.url(), post: res.request().postData() ?? undefined, data: await res.json() });
         }
       } catch { /* ignorieren */ }
     });
