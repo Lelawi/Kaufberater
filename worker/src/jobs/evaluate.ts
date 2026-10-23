@@ -47,6 +47,22 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         await sql`delete from kb_deals where product_id = ${p.id} and title ilike any(${pats})`;
       }
     }
+    // Preisverlauf von abgewählten/falschen Quellen entfernen – sonst verfälschen deren Preise Diagramm, Tiefstpreis und Schwellen
+    const h1 = await sql`delete from kb_price_history h using kb_offers o, kb_listings l
+                         where h.product_id = ${p.id} and h.offer_id = o.id and o.listing_id = l.id and l.rejected`;
+    const h2 = await sql`delete from kb_price_history h using kb_listings l
+                         where l.product_id = ${p.id} and l.rejected and h.product_id = ${p.id}
+                           and h.series = 'hist:' || l.source and h.shop = l.external_id`;
+    if (h1.count + h2.count > 0) {
+      // Tiefstpreis neu aufbauen und vorläufige Schwellen neu berechnen lassen
+      await sql`update kb_products set lowest_seen = null, lowest_seen_at = null,
+                  threshold_good = case when threshold_source = 'auto' and not thresholds_manual then null else threshold_good end,
+                  threshold_top = case when threshold_source = 'auto' and not thresholds_manual then null else threshold_top end,
+                  threshold_instant = case when threshold_source = 'auto' and not thresholds_manual then null else threshold_instant end
+                where id = ${p.id}`;
+      p.lowest_seen = null;
+      if (p.threshold_source === 'auto' && !p.thresholds_manual) { p.threshold_good = null; p.threshold_top = null; p.threshold_instant = null; }
+    }
     const offers = await sql<Offer[]>`
       select id, product_id, source, shop, country, condition, url, price, shipping, total, list_price, in_stock, title, shop_rating, shop_reviews, pack_size
       from kb_offers where product_id = ${p.id} and not gone and coalesce(in_stock, true)`;

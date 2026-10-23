@@ -35,6 +35,11 @@ export function computeThresholds(best: number, historyMin: number | null, dealP
     good = ref * 0.95; top = ref * 0.88; instant = ref * 0.82;
     basis = 'dem aktuellen Bestpreis (noch keine Deal-Historie)';
   }
+  // Plausibilität: Ausreißer (Fehlzuordnung, Zubehör) dürfen die Schwellen nicht ins Absurde ziehen –
+  // „gut“ knapp unter dem aktuellen Bestpreis, „top“/„sofort“ nicht unter 60 %/55 % davon
+  good = Math.min(good, best * 0.98);
+  top = Math.max(Math.min(top, good * 0.97), best * 0.6);
+  instant = Math.max(Math.min(instant, top * 0.97), best * 0.55);
   return { good: roundNice(good), top: roundNice(top), instant: roundNice(instant), basis };
 }
 
