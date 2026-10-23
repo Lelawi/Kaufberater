@@ -361,7 +361,10 @@ async function viewProduct(id) {
   ]);
   if (error) throw error;
   if (alertsR.data?.length) sb.from('kb_alerts').update({ read_at: new Date().toISOString() }).in('id', alertsR.data.map((a) => a.id)).then(refreshBadge);
-  const offers = offersR.data ?? [];
+  // Als falsch gemeldete Preise (z. B. veralteter Marktplatz-Preis auf der Zwischenseite) ausblenden, bis sich der Preis ändert
+  const allOffers = offersR.data ?? [];
+  const disputed = allOffers.filter((o) => o.disputed_total != null && Number(o.disputed_total) === Number(o.total));
+  const offers = allOffers.filter((o) => !disputed.includes(o));
   const a = analysisR.data?.[0];
   const newOffers = mergeOffers(offers.filter((o) => o.condition === 'new'));
   const refurb = mergeOffers(offers.filter((o) => o.condition !== 'new'));
@@ -421,7 +424,8 @@ async function viewProduct(id) {
     <div id="chartBox">${raw(chartFor(seriesR.data ?? [], p, a?.price_history))}</div></section>
 
   <section class="panel"><h2>Angebote Neuware <span class="muted" style="font-weight:400">${newOffers.length}</span></h2>
-    ${newOffers.length ? offerTable(newOffers, false, multi) : html`<p class="muted">Noch keine.</p>`}</section>
+    ${newOffers.length ? offerTable(newOffers, false, multi) : html`<p class="muted">Noch keine.</p>`}
+    ${disputed.length ? html`<p class="hint">${disputed.length} Angebot${disputed.length === 1 ? '' : 'e'} als falsch gemeldet (${disputed.map((o) => `${o.shop} ${fmtEur(o.total)}`).join(', ')}) – ${disputed.length === 1 ? 'zählt' : 'zählen'} nicht, bis sich der Preis ändert. <button class="linklike" id="undispute">Rückgängig</button></p>` : ''}</section>
   ${p.include_refurb ? html`<section class="panel"><h2>Refurbished, B-Ware, gebraucht <span class="muted" style="font-weight:400">${refurb.length}</span></h2>
     ${refurb.length ? offerTable(refurb, true, multi) : html`<p class="muted">Noch keine gefunden.</p>`}</section>` : ''}
 
@@ -469,6 +473,18 @@ async function viewProduct(id) {
     try { localStorage.setItem('kb-range', r.value); } catch { /* */ }
     document.getElementById('chartBox').innerHTML = String(chartFor(seriesR.data ?? [], p, a?.price_history));
   }));
+  view.querySelectorAll('[data-dispute]').forEach((b) => b.addEventListener('click', async () => {
+    const o = allOffers.find((x) => x.id === b.dataset.dispute);
+    if (!o || !confirm(`${o.shop}: Stimmt der Preis ${fmtEur(o.total)} beim Händler nicht? Das Angebot zählt dann nicht mehr für Bestpreis und Meldungen – bis sich der Preis im Preisvergleich ändert.`)) return;
+    const { error } = await sb.from('kb_offers').update({ disputed_total: o.total, disputed_at: new Date().toISOString() }).eq('id', o.id);
+    if (error) return toast(error.message);
+    await sb.rpc('kb_request_check', { p_product: id });
+    toast('Danke – wird ignoriert, Bestpreis wird neu berechnet'); route();
+  }));
+  document.getElementById('undispute')?.addEventListener('click', async () => {
+    await sb.from('kb_offers').update({ disputed_total: null, disputed_at: null }).in('id', disputed.map((o) => o.id));
+    await sb.rpc('kb_request_check', { p_product: id }); route();
+  });
   document.getElementById('identOk')?.addEventListener('click', async (e) => {
     const s = p.name_suggestions?.[Number(view.querySelector('#which input[name=ident]:checked')?.value ?? 0)];
     if (!s) return;
@@ -667,6 +683,8 @@ function shopTrust(o) {
   return '';
 }
 
+const MARKET = /marketplace|marktplatz|\(marktplatzh|kaufland\.de$|ebay/i;
+
 function offerTable(list, showCondition = false, perPiece = false) {
   const unit = (o) => Number(o.effective_total ?? o.total) / Math.max(1, Number(o.pack_size ?? 1));
   if (perPiece) list = [...list].sort((a, b) => unit(a) - unit(b));
@@ -677,9 +695,10 @@ function offerTable(list, showCondition = false, perPiece = false) {
   const via = (o) => viaList(o).join(', ');
   const rowHtml = (o, i) => html`<tr class="${i === 0 ? 'best' : ''}">
       <td><a class="shop" href="${safeUrl(o.url)}" target="_blank" rel="noopener">${o.shop}</a>${o.country && o.country !== 'DE' ? html` <span class="muted">(${o.country})</span>` : ''}
-        <div class="hint">${o.pack_size > 1 ? html`<strong>${packText(o.pack_size)}</strong> · ` : ''}${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${viaList(o).length ? html`<br>über ${via(o)}` : ''}${shopTrust(o)}</div></td>
+        <div class="hint">${o.pack_size > 1 ? html`<strong>${packText(o.pack_size)}</strong> · ` : ''}${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${viaList(o).length ? html`<br>über ${via(o)}` : ''}${MARKET.test(o.shop) ? html`<br><span style="color:var(--warn)">Marktplatz-Händler: Preis gilt oft nur bei einem bestimmten Verkäufer („weitere Angebote“) und ist im Preisvergleich manchmal veraltet</span>` : ''}${shopTrust(o)}</div></td>
       <td class="r"><span class="num price-cell">${fmtEur(o.effective_total ?? o.total)}</span>
-        <div class="hint">${o.pack_size > 1 ? html`<strong>${fmtEur(unit(o))}/Stück</strong><br>` : ''}${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}</div></td>
+        <div class="hint">${o.pack_size > 1 ? html`<strong>${fmtEur(unit(o))}/Stück</strong><br>` : ''}${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}
+          <br><button class="linklike" data-dispute="${o.id}" title="Beim Händler steht ein anderer Preis">Preis stimmt nicht?</button></div></td>
     </tr>`;
   const SHOW = 8;
   const head = html`<thead><tr><th>Händler</th><th class="r">Endpreis</th></tr></thead>`;

@@ -68,7 +68,9 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     const offers = await sql<Offer[]>`
       select id, product_id, source, shop, country, condition, url, price, shipping, total, list_price, in_stock, title, shop_rating, shop_reviews, pack_size
       from kb_offers where product_id = ${p.id} and not gone and coalesce(in_stock, true)
-        and listing_id not in (select id from kb_listings where product_id = ${p.id} and rejected)`;
+        and listing_id not in (select id from kb_listings where product_id = ${p.id} and rejected)
+        and (disputed_total is null or disputed_total <> total) -- vom Nutzer als falsch gemeldeter Preis (bis er sich ändert)
+      `;
 
     // 1) Effektiver Endpreis je Angebot
     const enriched = offers.map((o) => ({ o, ...effective(o, vouchers, rates) }));
