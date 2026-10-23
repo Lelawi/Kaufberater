@@ -62,6 +62,7 @@ export function coreTitle(t: string): string {
     .replace(/\b\d+\s*x\s*\d+\s*lm\b|\b\d+[.,]?\d*\s*(?:lm|w|watt|k|lumen)\b/gi, '')
     .replace(/\b\d{9,14}\b/g, '')                                                   // Artikelnummern/EAN
     .replace(/[|,;–-]\s*$/, '').replace(/\s*[|,;]\s*[|,;]/g, ',').replace(/\(\s*\)/g, '')
+    .replace(/\b(\p{L}+(?:\s+\p{L}+){0,2})\s+\1\b/giu, '$1')                         // „Smart Home Smart Home“
     .replace(/\s+\.(?=\s|$)/g, '').replace(/\b(\d+er)\s+\1\b/g, '').replace(/\s{2,}/g, ' ').trim().replace(/[\s,;|/-]+$/, '');
 }
 
