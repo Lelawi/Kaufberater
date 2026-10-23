@@ -50,6 +50,18 @@ export async function runAll(arg = '') {
           and coalesce((select max(created_at) from kb_analyses a where a.product_id = p.id), 'epoch') < ${prep}::timestamptz - interval '6 days'`;
       return { moved: r.count };
     });
+    // Während des Laufs geändert (z. B. Produkt in der App ausgewählt oder Menge geändert)? Der Sofort-Start wird dann
+    // gebremst (höchstens 1x pro Minute) – deshalb hier gleich noch einmal suchen, abfragen und bewerten
+    if (productId) {
+      const [again] = await sql`select 1 from kb_products where id = ${productId} and status = 'watching'
+                                and (discovery_status = 'pending' or (threshold_good is null and not thresholds_manual))`;
+      if (again) {
+        await step('discovery2', () => runDiscovery(deadline, productId));
+        await step('checks2', () => runChecks(deadline, { productId }));
+        await step('evaluate2', () => runEvaluate({ productId }));
+        await step('autothresholds2', () => runAutoThresholds({ productId }));
+      }
+    }
     await step('alerts', () => deliverAlerts());
     // Aufräumen einmal am Tag (nicht an die Uhrzeit koppeln – GitHub startet Läufe oft verspätet)
     if (mode === 'all') {

@@ -193,8 +193,8 @@ async function showPushHint() {
 function row(p) {
   const lvl = p.status === 'bought' ? null : levelOf(p.best_price, p);
   let meta = [];
-  if (p.discovery_status === 'pending' || p.discovery_status === 'running') meta.push('Angebote werden gesucht …');
-  else if (!p.best_price) meta.push('Noch kein Angebot gefunden');
+  if (!p.best_price) meta.push(p.discovery_status === 'pending' || p.discovery_status === 'running' ? 'Angebote werden gesucht …' : 'Noch kein Angebot gefunden');
+  else if (p.status === 'watching' && !p.threshold_good && !p.max_price) meta.push('Kaufschwellen werden berechnet …');
   if (p.window_end && p.status === 'watching') {
     const d = daysUntil(p.window_end);
     meta.push(d < 0 ? 'Zeitraum vorbei' : `Kauf bis ${fmtDate(p.window_end, { day: 'numeric', month: 'short' })}${p.window_type === 'hard' ? ' (fest)' : ''}`);
