@@ -382,6 +382,7 @@ async function viewProduct(id) {
     </section>` : html`<section class="panel flat"><h2>Einschätzung</h2><p class="muted">${p.analysis_status === 'failed' ? 'Die Analyse ist fehlgeschlagen und wird erneut versucht.' : 'Die Tiefenanalyse (Preisgeschichte, Vorgänger, Aktionstage, Alternativen) läuft jeden Morgen und erscheint dann hier. Bis dahin gelten vorläufige Schwellen aus den gefundenen Preisen.'}</p></section>`}
 
   ${multi && !isBought ? basketSection(p, offers) : ''}
+  ${!isBought ? packOverview(p, offers) : ''}
 
   <section class="panel">
     <h2>Kaufschwellen${multi ? html` <span class="muted" style="font-weight:400">pro Stück</span>` : ''}</h2>
@@ -522,7 +523,14 @@ async function answerWhich(p, picked) {
   const drop = sugg.filter((_, i) => !picked.includes(i)).flatMap((s) => s.listing_ids);
   const upd = { name_confirmed: true, name_suggestions: null };
   if (keep.length === 1) upd.name = keep[0].label;          // eindeutige Wahl → deren sauberen Namen übernehmen
+  // Merkmale der abgewählten Varianten (z. B. „Essential“, „Bridge“) künftig ausschließen – auch bei neuen Treffern und Deals
+  const keepTags = new Set(keep.flatMap((s) => s.tags ?? []));
+  const keepWords = new Set(keep.flatMap((s) => s.exclude ?? []));
+  const ex = sugg.filter((_, i) => !picked.includes(i)).flatMap((s) => (s.tags ?? []).some((t) => !keepTags.has(t)) ? (s.exclude ?? []) : [])
+    .filter((w) => !keepWords.has(w));
+  if (ex.length) upd.exclude_terms = [...new Set([...(p.exclude_terms ?? []), ...ex])];
   if (drop.length) {
+    upd.image_url = null;                                    // Bild kam evtl. von einer abgewählten Variante
     await sb.from('kb_listings').update({ rejected: true }).in('id', drop);
     await sb.from('kb_offers').update({ gone: true }).in('listing_id', drop);
     // Neu bewerten lassen (Bestpreis ohne die abgewählten Varianten)
@@ -533,6 +541,28 @@ async function answerWhich(p, picked) {
   if (drop.length) await sb.rpc('kb_request_check', { p_product: p.id });
   toast(drop.length ? 'Danke – die anderen Varianten werden nicht mehr beobachtet' : 'Danke');
   route();
+}
+
+/** Alle gefundenen Packungsgrößen im Vergleich: günstigstes Angebot je Größe und Preis pro Stück */
+function packOverview(p, offers) {
+  const trusted = (o) => !(o.shop_reviews != null && o.shop_reviews < 20) && !(o.shop_rating != null && Number(o.shop_rating) < 3.5 && (o.shop_reviews ?? 0) < 500);
+  const best = new Map();
+  for (const o of offers.filter((x) => x.condition === 'new' && x.in_stock !== false && trusted(x))) {
+    const n = Number(o.pack_size ?? 1); const price = Number(o.effective_total ?? o.total);
+    const cur = best.get(n);
+    if (!cur || price < cur.price) best.set(n, { o, n, price, unit: price / n });
+  }
+  const rows = [...best.values()].sort((a, b) => a.n - b.n);
+  if (rows.length < 2) return '';
+  const minUnit = Math.min(...rows.map((r) => r.unit));
+  return html`<section class="panel"><h2>Packungsgrößen im Vergleich <span class="muted" style="font-weight:400">${rows.length}</span></h2>
+    <p class="hint" style="margin-top:-6px">Günstigstes Angebot je Packungsgröße (Endpreis inkl. Versand).${p.quantity > 1 ? ` Für deine ${p.quantity} Stück werden alle Größen miteinander kombiniert (siehe oben).` : ''}</p>
+    <table class="table offers"><thead><tr><th>Packung</th><th class="r">Preis</th><th class="r">pro Stück</th></tr></thead><tbody>
+    ${rows.map((r) => html`<tr class="${r.unit === minUnit ? 'best' : ''}">
+      <td><strong>${r.n === 1 ? 'Einzeln' : r.n + 'er'}</strong><div class="hint"><a href="${safeUrl(r.o.url)}" target="_blank" rel="noopener">${r.o.shop}</a></div></td>
+      <td class="r num">${fmtEur(r.price)}</td>
+      <td class="r"><span class="num price-cell">${fmtEur(r.unit)}</span>${r.unit > minUnit * 1.005 ? html`<div class="hint">+${Math.round((r.unit / minUnit - 1) * 100)} %</div>` : html`<div class="hint">am günstigsten</div>`}</td></tr>`)}
+    </tbody></table></section>`;
 }
 
 /** Mengen-Produkte: günstigster Einkauf je Händler für die benötigte Stückzahl (beliebige Packungsgrößen kombiniert) */

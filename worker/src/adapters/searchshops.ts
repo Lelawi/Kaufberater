@@ -129,6 +129,8 @@ export function makeSearchShop(cfg: SearchShopConfig): SourceAdapter {
         all.push(...cands);
         if (cands.some((c) => c.score >= 0.75)) break;
       }
+      // Mengen-Produkte: auch nach Mehrfachpackungen suchen (höchstens zwei weitere Anfragen pro Shop)
+      for (const term of (q.packQueries ?? []).slice(0, 2)) all.push(...await searchOnce(term, q));
       const seen = new Set<string>();
       return all.filter((c) => !seen.has(c.url) && seen.add(c.url));
     },

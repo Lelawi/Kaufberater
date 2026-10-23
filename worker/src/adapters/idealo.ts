@@ -71,7 +71,7 @@ export function parseIdealoOffers(html: string, pageUrl: string): OfferData[] {
 }
 
 async function search(q: ProductQuery): Promise<Candidate[]> {
-  const terms = new Set([searchQuery(q), ...(q.terms ?? []).slice(0, 3)]);
+  const terms = new Set([searchQuery(q), ...(q.terms ?? []).slice(0, 3), ...(q.packQueries ?? [])]);
   const all: Candidate[] = [];
   for (const t of terms) {
     const p = await fetchPage(`${BASE}/preisvergleich/MainSearchProductCategory.html?q=${encodeURIComponent(t)}`, { minDelayMs: 3000 });

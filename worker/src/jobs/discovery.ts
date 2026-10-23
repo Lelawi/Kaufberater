@@ -4,7 +4,7 @@ import { SOURCES, availableHere } from '../adapters/registry.ts';
 import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
 import type { Candidate } from '../adapters/types.ts';
-import { variantCodes, modelKeys } from '../util/match.ts';
+import { variantCodes, modelKeys, packQueries } from '../util/match.ts';
 import { cleanName, variantSuggestions } from '../util/naming.ts';
 import { ebayConfigured } from '../adapters/ebay.ts';
 
@@ -31,6 +31,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
     if (Date.now() > deadline) break;
     await sql`update kb_products set discovery_status = 'running', discovery_at = now() where id = ${p.id}`;
     const q = toQuery(p);
+    if ((p.quantity ?? 1) > 1) q.packQueries = packQueries(q);
     const sources = SOURCES.filter((s) => s.search && availableHere(s) && (p.include_refurb || s.kind !== 'refurb'));
     const results = await Promise.allSettled(sources.map(async (s) => {
       const t0 = Date.now();

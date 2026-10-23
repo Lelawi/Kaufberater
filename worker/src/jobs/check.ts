@@ -9,6 +9,7 @@ import { plausibleOffers } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
 import { pageHistory, pageImage } from '../util/history.ts';
 import { offerPackSize, packSize } from '../util/pack.ts';
+import { norm } from '../util/match.ts';
 
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
@@ -57,7 +58,9 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
           { id: l.id, source: l.source, country: l.country, external_id: l.external_id, url: l.url, condition: l.condition, title: l.title },
           toQuery({ id: l.product_id, name: l.p_name, brand: l.p_brand, model: l.p_model, ean: l.p_ean, search_terms: l.p_terms, exclude_terms: l.p_exclude }),
         );
-        const usable = plausibleOffers(offers.filter((o) => o.shipsToDE !== false && o.price > 0));
+        // Ausgeschlossene Varianten (z. B. „Essential“ nach der Rückfrage) gar nicht erst speichern
+        const ex = (l.p_exclude ?? []).map(norm).filter(Boolean);
+        const usable = plausibleOffers(offers.filter((o) => o.shipsToDE !== false && o.price > 0 && !ex.some((e) => norm(o.title).includes(e))));
         // Preisvergleich liefert plötzlich (fast) nichts, obwohl vorher viele Angebote da waren → Seite vermutlich unvollständig.
         // Dann nichts als „verschwunden“ markieren, sondern bald noch einmal versuchen.
         if (adapter.kind === 'aggregator' && usable.length <= 1) {
@@ -74,7 +77,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
         if (pageImage.has(l.url)) {
           const img = pageImage.get(l.url)!; pageImage.delete(l.url);
           await sql`update kb_products set image_url = ${img} where id = ${l.product_id}
-                    and (image_url is null or (${adapter.kind === 'aggregator'} and image_url not like '%idealo%' and image_url not like '%billiger%'))
+                    and (image_url is null or (${adapter.kind === 'aggregator' && (packSize(l.title) ?? 1) === 1} and image_url not like '%idealo%' and image_url not like '%billiger%'))
                     and image_url is distinct from ${img}`;
         }
         if (pageHistory.has(l.url)) { await importHistory(l, pageHistory.get(l.url)).catch((e) => console.log('Preisverlauf:', e.message)); pageHistory.delete(l.url); }

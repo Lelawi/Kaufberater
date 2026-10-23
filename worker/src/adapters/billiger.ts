@@ -63,8 +63,12 @@ export function parseBilligerOffers(html: string, pageUrl: string): { offers: Of
 }
 
 async function search(q: ProductQuery): Promise<Candidate[]> {
-  const p = await fetchPage(`${BASE}/search?searchstring=${encodeURIComponent(searchQuery(q))}`, { minDelayMs: 3000 });
-  return parseBilligerSearch(p.text, q);
+  const out = new Map<string, Candidate>();
+  for (const t of [searchQuery(q), ...(q.packQueries ?? [])]) {
+    const p = await fetchPage(`${BASE}/search?searchstring=${encodeURIComponent(t)}`, { minDelayMs: 3000 });
+    for (const c of parseBilligerSearch(p.text, q)) if (!out.has(c.externalId)) out.set(c.externalId, c);
+  }
+  return [...out.values()];
 }
 
 /** Preisverlauf der Produktseite (billiger.de zeigt den günstigsten Preis je Tag, ca. 6 Monate zurück) */

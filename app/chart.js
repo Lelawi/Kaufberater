@@ -6,32 +6,41 @@ import { esc, fmtEur0, fmtEur, fmtDate } from './lib.js';
  * und einer Markierung, wo der aktuelle Preis steht.
  */
 export function ladder(p, price) {
-  const t = [p.threshold_instant, p.threshold_top, p.threshold_good ?? p.max_price].map((x) => (x ? Number(x) : null));
-  const known = [...t, price, p.lowest_seen].filter((x) => x);
+  // Höchstpreis gilt bei Mengen-Produkten für die ganze Menge → pro Stück umrechnen
+  const maxUnit = p.max_price ? Number(p.max_price) / Math.max(1, Number(p.quantity ?? 1)) : null;
+  const t = [p.threshold_instant, p.threshold_top, p.threshold_good ?? maxUnit].map((x) => (x ? Number(x) : null));
+  price = price ? Number(price) : null;
+  const known = [...t, price, p.lowest_seen ? Number(p.lowest_seen) : null].filter((x) => x);
   if (!price || known.length < 2 || !t.some(Boolean)) return '';
   const lo = Math.min(...known) * 0.97;
-  const hi = Math.max(...known, price) * 1.03;
-  const W = 320; const H = 34; const pad = 2;
-  const x = (v) => pad + ((v - lo) / (hi - lo)) * (W - 2 * pad);
-  const zones = [];
-  // Zonen: [lo..instant] gelb, [instant..top] top, [top..good] gut, [good..hi] warten
+  const hi = Math.max(...known) * 1.03;
+  const pct = (v) => Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100));
+  const money = (v) => (v < 100 ? fmtEur(v) : fmtEur0(v));
   const [ti, tt, tg] = t;
+  // Zonen: [lo..sofort] gelb, [sofort..top] top, [top..gut] gut, darüber warten
+  const segs = [];
   let prev = lo;
-  for (const [edge, color] of [[ti, 'var(--tag)'], [tt, 'var(--top)'], [tg, 'var(--good)']]) {
+  for (const [edge, cls] of [[ti, 'instant'], [tt, 'top'], [tg, 'good']]) {
     if (!edge) continue;
-    zones.push(`<rect x="${x(prev)}" y="10" width="${Math.max(0, x(edge) - x(prev))}" height="6" fill="${color}" ${color === 'var(--tag)' ? '' : 'opacity=".85"'}/>`);
+    segs.push(`<i class="seg ${cls}" style="left:${pct(prev)}%;width:${Math.max(0, pct(edge) - pct(prev))}%"></i>`);
     prev = edge;
   }
-  zones.push(`<rect x="${x(prev)}" y="10" width="${Math.max(0, x(hi) - x(prev))}" height="6" fill="var(--line)"/>`);
-  const cx = x(price);
-  const low = p.lowest_seen ? `<line x1="${x(p.lowest_seen)}" x2="${x(p.lowest_seen)}" y1="6" y2="20" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="2 2"/>` : '';
-  const anchor = cx < 40 ? 'start' : cx > W - 40 ? 'end' : 'middle';
+  segs.push(`<i class="seg wait" style="left:${pct(prev)}%;width:${100 - pct(prev)}%"></i>`);
+  const place = (v) => { const x = pct(v); return `left:${x}%;transform:translateX(${x < 10 ? '0' : x > 90 ? '-100%' : '-50%'})`; };
+  // Schwellen-Beschriftung unter dem Strich; liegen zwei zu dicht beieinander, kommt die zweite eine Zeile tiefer
+  const marks = [[ti, 'instant', 'sofort'], [tt, 'top', 'top'], [tg, 'good', 'gut']].filter(([v]) => v).sort((a, b) => a[0] - b[0]);
+  let lastRow1 = -100; let rows = 1;
+  const labels = marks.map(([v, cls, word]) => {
+    const x = pct(v); let row = 1;
+    if (x - lastRow1 < 22) { row = 2; rows = 2; } else lastRow1 = x;
+    return `<span class="lab ${cls} r${row}" style="${place(v)}" title="${word}"><b>${word}</b> ${esc(money(v))}</span>`;
+  }).join('');
+  const ticks = marks.map(([v, cls]) => `<i class="tick ${cls}" style="left:${pct(v)}%"></i>`).join('');
+  const low = p.lowest_seen ? `<i class="low" style="left:${pct(Number(p.lowest_seen))}%" title="Tiefstpreis seit Beobachtung"></i>` : '';
   return `<div class="ladder" role="img" aria-label="${esc(`Aktueller Preis ${fmtEur(price)}; Schwellen: sofort ${fmtEur(ti)}, top ${fmtEur(tt)}, gut ${fmtEur(tg)}`)}">
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <g>${zones.join('')}</g>${low}
-      <g class="cur"><circle cx="${cx}" cy="13" r="6" fill="var(--surface)" stroke="var(--ink)" stroke-width="2.5"/>
-      <text x="${cx}" y="33" text-anchor="${anchor}">${esc(fmtEur0(price))}</text></g>
-    </svg></div>`;
+    <div class="lad-cur"><span style="${place(price)}">${esc(money(price))}</span></div>
+    <div class="lad-bar">${segs.join('')}${ticks}${low}<i class="dot" style="left:${pct(price)}%"></i></div>
+    <div class="lad-labels rows${rows}">${labels}</div></div>`;
 }
 
 /**

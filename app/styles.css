@@ -155,10 +155,29 @@ details.more > summary { cursor: pointer; color: var(--ink-2); font-weight: 500;
 .pill.wait { color: var(--ink-3); }
 .pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
 
-/* Preisleiter */
-.ladder svg { display: block; width: 100%; height: auto; overflow: visible; }
-.ladder text { font: 500 11px var(--font-num); fill: var(--ink-3); }
-.ladder .cur text { font: 700 12px var(--font-num); fill: var(--ink); }
+/* Preisleiter: Zonen (sofort/top/gut/warten) mit Beschriftung der Schwellen, Punkt = aktueller Preis */
+.ladder { position: relative; font: 500 11px var(--font-num); font-variant-numeric: tabular-nums; }
+.ladder .lad-cur { position: relative; height: 16px; }
+.ladder .lad-cur span { position: absolute; bottom: 1px; font-weight: 700; font-size: 12px; color: var(--ink); white-space: nowrap; }
+.ladder .lad-bar { position: relative; height: 6px; margin: 0 1px; }
+.ladder .seg { position: absolute; top: 0; bottom: 0; }
+.ladder .seg:first-child { border-radius: 3px 0 0 3px; }
+.ladder .seg.wait { background: var(--line); border-radius: 0 3px 3px 0; }
+.ladder .seg.instant { background: var(--tag); }
+.ladder .seg.top { background: var(--top); opacity: .85; }
+.ladder .seg.good { background: var(--good); opacity: .85; }
+.ladder .tick { position: absolute; top: -2px; bottom: -4px; width: 1.5px; margin-left: -.75px; background: var(--ink-3); opacity: .55; }
+.ladder .low { position: absolute; top: -4px; bottom: -4px; border-left: 1.5px dashed var(--ink-3); }
+.ladder .dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--surface); border: 2.5px solid var(--ink); box-sizing: border-box; }
+.ladder .lad-labels { position: relative; height: 18px; }
+.ladder .lad-labels.rows2 { height: 32px; }
+.ladder .lab { position: absolute; top: 5px; white-space: nowrap; color: var(--ink-3); }
+.ladder .lab.r2 { top: 19px; }
+.ladder .lab b { font-weight: 600; }
+.ladder .lab.instant b { color: #A88700; }
+.ladder .lab.top b { color: var(--top); }
+.ladder .lab.good b { color: var(--good); }
+@media (prefers-color-scheme: dark) { .ladder .lab.instant b { color: var(--tag); } }
 
 /* Produktseite */
 .hero { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; align-items: end; margin-bottom: 8px; }

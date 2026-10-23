@@ -8,6 +8,13 @@ export interface ProductQuery {
   ean?: string | null;
   terms?: string[];        // weitere Modellnummern/Varianten
   exclude?: string[];      // Wörter, die nicht vorkommen dürfen
+  packQueries?: string[];  // Mengen-Produkte: zusätzliche Suchen nach Mehrfachpackungen („… 12er“, „… Set“)
+}
+
+/** Zusätzliche Suchbegriffe für Mehrfachpackungen (nur bei Mengen-Produkten gesetzt) */
+export function packQueries(q: ProductQuery): string[] {
+  const base = searchQuery(q);
+  return ['Pack', 'Set', '6er', '10er', '12er', '18er'].map((s) => `${base} ${s}`);
 }
 
 export function norm(s: string | null | undefined): string {

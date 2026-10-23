@@ -36,6 +36,17 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         where user_id = ${p.user_id} and active and (valid_until is null or valid_until >= current_date)`);
     }
     const vouchers = userVouchers.get(p.user_id)!;
+    // Ausschlusswörter (z. B. nach „Welches Produkt meinst du?“) auf schon gespeicherte Quellen, Angebote und Deals anwenden
+    if (p.exclude_terms?.length) {
+      const pats = p.exclude_terms.filter((t) => t.trim().length >= 3).map((t) => `%${t.trim()}%`);
+      if (pats.length) {
+        await sql`update kb_listings set rejected = true where product_id = ${p.id} and not rejected and discovered_by <> 'user' and title ilike any(${pats})`;
+        await sql`update kb_offers set gone = true where product_id = ${p.id} and not gone and title ilike any(${pats})`;
+        await sql`delete from kb_price_history h using kb_deals d where d.product_id = ${p.id} and d.title ilike any(${pats})
+                  and h.product_id = d.product_id and h.series = 'deal:' || d.portal and h.total = d.price`;
+        await sql`delete from kb_deals where product_id = ${p.id} and title ilike any(${pats})`;
+      }
+    }
     const offers = await sql<Offer[]>`
       select id, product_id, source, shop, country, condition, url, price, shipping, total, list_price, in_stock, title, shop_rating, shop_reviews, pack_size
       from kb_offers where product_id = ${p.id} and not gone and coalesce(in_stock, true)`;

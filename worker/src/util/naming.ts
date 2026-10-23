@@ -39,14 +39,19 @@ export function cleanName(name: string, titles: string[], brand?: string | null)
 
 // Wörter, die ein anderes Produkt (nicht nur eine andere Packung) kennzeichnen
 const VARIANT: Record<string, string> = {
-  essential: 'Essential', color: 'Color', colour: 'Color', farbig: 'Color', farbe: 'Color', rgb: 'Color', rgbw: 'Color', multicolor: 'Color',
+  essential: 'Essential', color: 'Color', colour: 'Color', farbig: 'Color', rgb: 'Color', rgbw: 'Color', multicolor: 'Color',
   bridge: 'mit Bridge', starter: 'Starter-Set', starterset: 'Starter-Set', filament: 'Filament', outdoor: 'Outdoor', aussen: 'Outdoor',
   pro: 'Pro', max: 'Max', plus: 'Plus', ultra: 'Ultra', mini: 'Mini', lite: 'Lite', slim: 'Slim', xl: 'XL', se: 'SE', fe: 'FE',
   e27: 'E27', e14: 'E14', gu10: 'GU10', gu5: 'GU5.3', b22: 'B22', dimmschalter: 'mit Dimmschalter', fernbedienung: 'mit Fernbedienung',
   refurbished: 'Refurbished', generalueberholt: 'Refurbished',
 };
 
-export interface Suggestion { label: string; listing_ids: string[]; key: string; count: number }
+export interface Suggestion { label: string; listing_ids: string[]; key: string; count: number; tags: string[]; exclude: string[] }
+
+/** Wörter, die beim Abwählen einer Variante künftig ausgeschlossen werden (nur eindeutige, keine kurzen wie „Pro“/„SE“) */
+function excludeWords(tag: string): string[] {
+  return Object.entries(VARIANT).filter(([w, t]) => t === tag && (w.length >= 5 || /^(e27|e14|b22|gu10|rgbw)$/.test(w))).map(([w]) => w);
+}
 
 /** Titel ohne Packungsangaben und technische Details – als Vorschlagstext */
 export function coreTitle(t: string): string {
@@ -72,7 +77,7 @@ export function variantSuggestions(name: string, cands: { id: string; title: str
     const tags = [...new Set(words.map((w) => VARIANT[w]).filter((v): v is string => !!v && !own.has(v)))].sort();
     const key = tags.join('+');
     const label = coreTitle(c.title);
-    const g = groups.get(key) ?? { key, label, listing_ids: [], count: 0 };
+    const g = groups.get(key) ?? { key, label, listing_ids: [], count: 0, tags, exclude: [...new Set(tags.flatMap(excludeWords))] };
     g.listing_ids.push(c.id); g.count++;
     if (label.length && (label.length < g.label.length || !g.label)) g.label = label;    // kürzester sauberer Titel
     groups.set(key, g);
