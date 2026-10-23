@@ -2,11 +2,10 @@
 import { db } from '../db.ts';
 import { packSize } from '../util/pack.ts';
 
-const KEY = 'packsize_backfill_v1';
-
 export async function packBackfill() {
   const sql = await db();
-  const [done] = await sql`select 1 from kb_worker_config where key = ${KEY}`;
+  // Erledigt-Merker: ein früherer Lauf mit Ergebnis dieses Schritts (kb_worker_config darf der Worker nicht lesen)
+  const [done] = await sql`select 1 from kb_runs where stats -> 'packs' ? 'offers' limit 1`;
   if (done) return null;
   const listings = await sql`select id, product_id, source, external_id, title from kb_listings`;
   const lPack = new Map(listings.map((l) => [l.id as string, packSize(l.title as string) ?? 1]));
@@ -27,6 +26,5 @@ export async function packBackfill() {
   const r5 = await sql`update kb_price_history h set pack_size = d.pack_size from kb_deals d
                        where h.product_id = d.product_id and h.series = 'deal:' || d.portal and h.total = d.price
                          and h.observed_at = coalesce(d.posted_at, h.observed_at) and h.pack_size <> d.pack_size`;
-  await sql`insert into kb_worker_config (key, value) values (${KEY}, now()::text) on conflict (key) do nothing`;
   return { offers: r1.count, deals: r2.count, offerHist: r3.count, compareHist: r4.count, dealHist: r5.count };
 }
