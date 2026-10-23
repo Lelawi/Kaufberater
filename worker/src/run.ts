@@ -12,6 +12,7 @@ import { runDigest } from './jobs/digest.ts';
 import { runVouchers } from './jobs/vouchers.ts';
 import { stats as httpStats } from './util/http.ts';
 import { preBlackWeekAnalysis } from './util/events.ts';
+import { packBackfill } from './jobs/packbackfill.ts';
 
 /** arg: "all" (Standard), "checks", "deals", "discovery", "quick", "product:<uuid>" */
 export async function runAll(arg = '') {
@@ -29,6 +30,7 @@ export async function runAll(arg = '') {
     result[name + '_s'] = Math.round((Date.now() - t0) / 1000);
   };
   try {
+    await step('packs', () => packBackfill());
     if (['all', 'discovery', 'product'].includes(mode)) await step('discovery', () => runDiscovery(deadline, productId));
     if (['all', 'checks', 'product'].includes(mode)) await step('checks', () => runChecks(deadline, { productId }));
     // Deal-Portale: jedes Produkt höchstens etwa stündlich, pro Lauf begrenzte Anzahl (schont die Portale)

@@ -41,18 +41,21 @@ export function computeThresholds(best: number, historyMin: number | null, dealP
 export async function runAutoThresholds(opts: { productId?: string } = {}) {
   const sql = await db();
   const products = await sql`
-    select id, user_id, name, best_price, lowest_seen from kb_products
+    select id, user_id, name, best_price, lowest_seen, quantity from kb_products
     where status = 'watching' and not thresholds_manual and best_price is not null
       and (threshold_good is null or threshold_source = 'auto')
       and (${opts.productId ?? null}::uuid is null or id = ${opts.productId ?? null}::uuid)`;
   let set = 0;
   for (const p of products) {
     // Nur Deals, die in Deutschland erreichbar waren (Auslands-Deals sind mit einer Notiz markiert)
-    const deals = await sql`select price from kb_deals where product_id = ${p.id} and price is not null and match_score >= 0.85
+    // Mengen-Produkte: alles pro Stück (Packungspreis / Packungsgröße); sonst nur Einzelstück-Deals
+    const multi = Number(p.quantity ?? 1) > 1;
+    const deals = await sql`select price / case when ${multi} then pack_size else 1 end as price from kb_deals
+                            where product_id = ${p.id} and price is not null and match_score >= 0.85 and (${multi} or pack_size = 1)
                             and notes is null and (posted_at is null or posted_at > now() - interval '18 months')`;
     // Preisverlauf der Preisvergleiche (ca. 6 Monate): 10-%-Tiefpunkt, damit ein einzelner Ausreißer-Tag nicht zählt
     const [h] = await sql`select percentile_cont(0.1) within group (order by d.m) as low, count(*)::int as n from (
-                            select (observed_at at time zone 'Europe/Berlin')::date as day, min(total) as m from kb_price_history
+                            select (observed_at at time zone 'Europe/Berlin')::date as day, min(total / case when ${multi} then pack_size else 1 end) as m from kb_price_history
                             where product_id = ${p.id} and series like 'hist:%' and observed_at > now() - interval '200 days' group by 1) d`;
     const histLow = h?.n >= 20 && h.low ? Number(h.low) : null;
     const seen = [p.lowest_seen ? Number(p.lowest_seen) : null, histLow].filter((x): x is number => x != null);
@@ -65,7 +68,7 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
     await createAlert({
       userId: p.user_id, productId: p.id, kind: 'analysis', level: 'info',
       title: `${p.name}: Preisüberwachung läuft`,
-      body: `Günstigster Preis gerade ${fmtEur(Number(p.best_price))}. Vorläufige Schwellen aus ${t.basis}: gut ${fmtEur(t.good)}, top ${fmtEur(t.top)}, sofort ${fmtEur(t.instant)}. Die Tiefenanalyse verfeinert sie morgen früh.`,
+      body: `Günstigster Preis gerade ${fmtEur(Number(p.best_price))}${multi ? ' pro Stück' : ''}. Vorläufige Schwellen${multi ? ' (pro Stück)' : ''} aus ${t.basis}: gut ${fmtEur(t.good)}, top ${fmtEur(t.top)}, sofort ${fmtEur(t.instant)}. Die Tiefenanalyse verfeinert sie morgen früh.`,
       dedupKey: `auto:${p.id}`,
     });
     set++;

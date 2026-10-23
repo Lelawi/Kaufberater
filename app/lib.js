@@ -73,7 +73,9 @@ export function levelOf(price, p) {
   if (price === null || price === undefined) return null;
   if (p.threshold_instant && price <= p.threshold_instant) return 'instant';
   if (p.threshold_top && price <= p.threshold_top) return 'top';
-  if ((p.threshold_good ?? p.max_price) && price <= (p.threshold_good ?? p.max_price)) return 'good';
+  // Höchstpreis gilt für die ganze Menge, Preise/Schwellen bei Mengen-Produkten pro Stück
+  const maxUnit = p.max_price ? Number(p.max_price) / Math.max(1, Number(p.quantity ?? 1)) : null;
+  if ((p.threshold_good ?? maxUnit) && price <= (p.threshold_good ?? maxUnit)) return 'good';
   return 'wait';
 }
 export const LEVEL_TEXT = { instant: 'Sofort zuschlagen', top: 'Top-Preis', good: 'Guter Preis', wait: 'Noch warten' };
@@ -128,3 +130,40 @@ export function hotWindow(now = new Date()) {
   const diff = Math.round((+today - +bf) / 864e5);
   return diff >= -4 && diff <= 4 ? 'Black Week' : null;
 }
+
+/** Packungsgröße als Text: 1 → '', 3 → '3er-Pack' */
+export const packText = (n) => (Number(n) > 1 ? `${n}er-Pack` : '');
+
+/**
+ * Günstigster Einkauf von mindestens `need` Stück bei einem Händler (eine Bestellung, Versand einmal),
+ * beliebige Packungsgrößen kombiniert. offers: [{ id, pack, price, shipping }] → { pieces, goods, shipping, total, items }
+ * (gleiche Rechnung wie worker/src/util/pack.ts)
+ */
+export function cheapestBasket(offers, need) {
+  const byPack = new Map();
+  for (const o of offers) {
+    const pack = Number(o.pack); const price = Number(o.price);
+    if (!(pack >= 1) || !(price > 0)) continue;
+    const cur = byPack.get(pack);
+    if (!cur || price < cur.price) byPack.set(pack, { ...o, pack, price });
+  }
+  const packs = [...byPack.values()];
+  if (!packs.length || need < 1) return null;
+  const limit = need + Math.max(...packs.map((p) => p.pack));
+  const cost = new Array(limit + 1).fill(Infinity); const pick = new Array(limit + 1).fill(-1);
+  cost[0] = 0;
+  for (let n = 1; n <= limit; n++) for (let i = 0; i < packs.length; i++) {
+    const prev = n - packs[i].pack;
+    if (prev >= 0 && cost[prev] + packs[i].price < cost[n] - 1e-9) { cost[n] = cost[prev] + packs[i].price; pick[n] = i; }
+  }
+  let best = -1;
+  for (let n = need; n <= limit; n++) if (cost[n] < Infinity && (best < 0 || cost[n] < cost[best] - 1e-9)) best = n;
+  if (best < 0) return null;
+  const counts = new Map();
+  for (let n = best; n > 0; n -= packs[pick[n]].pack) counts.set(pick[n], (counts.get(pick[n]) ?? 0) + 1);
+  const items = [...counts.entries()].map(([i, count]) => ({ offer: packs[i], pack: packs[i].pack, count })).sort((a, b) => b.pack - a.pack);
+  const shipping = Math.max(0, ...items.map((i) => Number(i.offer.shipping ?? 0)));
+  const goods = Math.round(cost[best] * 100) / 100;
+  return { pieces: best, goods, shipping, total: Math.round((goods + shipping) * 100) / 100, items };
+}
+export const basketText = (b) => b.items.map((i) => `${i.count}× ${i.pack === 1 ? 'einzeln' : i.pack + 'er'}`).join(' + ');

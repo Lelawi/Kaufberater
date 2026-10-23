@@ -11,6 +11,7 @@ import { plausibleOffers, IMPORT_MARKET } from '../util/plausible.ts';
 import { fmtEur, parsePrice } from '../util/money.ts';
 import { createAlert } from './alerts.ts';
 import { IS_HOME } from '../adapters/registry.ts';
+import { packSize } from '../util/pack.ts';
 
 export async function runQuickChecks(deadline: number) {
   const sql = await db();
@@ -110,7 +111,7 @@ async function check(input: string, userId: string) {
 
   // Steht das Produkt schon auf der Wunschliste?
   const sql = await db();
-  const mine = await sql`select id, name, model, brand, search_terms, threshold_good, threshold_top, threshold_instant, lowest_seen from kb_products where user_id = ${userId} and status = 'watching'`;
+  const mine = await sql`select id, name, model, brand, search_terms, threshold_good, threshold_top, threshold_instant, lowest_seen, quantity from kb_products where user_id = ${userId} and status = 'watching'`;
   const watched = mine.map((p) => ({ p, r: matchTitle({ name: p.name, model: p.model, brand: p.brand, terms: p.search_terms ?? [] }, `${name} ${model ?? ''}`) }))
     .filter((x) => x.r.score >= 0.85).sort((a, b) => b.r.score - a.r.score)[0]?.p ?? null;
 
@@ -135,8 +136,10 @@ async function check(input: string, userId: string) {
   if (listPrice && best && listPrice > best * 1.3) parts.push(`Vorsicht: Der Streichpreis ${fmtEur(listPrice)} ist ein Mondpreis – der Rabatt wirkt größer, als er ist.`);
   if (watched) {
     const th = [['Sofort zuschlagen', watched.threshold_instant], ['Top', watched.threshold_top], ['Gut', watched.threshold_good]].filter(([, v]) => v != null) as [string, number][];
-    const hit = price ? th.find(([, v]) => price! <= Number(v)) : null;
-    parts.push(`Steht auf deiner Wunschliste („${watched.name}“)${hit ? ` – der Preis erreicht deine Schwelle „${hit[0]}“ (${fmtEur(Number(hit[1]))})` : th.length ? ` – deine Schwelle „Gut“ liegt bei ${fmtEur(Number(watched.threshold_good ?? th[th.length - 1][1]))}` : ''}.`);
+    // Mengen-Produkte: Schwellen gelten pro Stück – Packungsgröße der Seite berücksichtigen
+    const unit = price && watched.quantity > 1 ? price / (packSize(name) ?? 1) : price;
+    const hit = unit ? th.find(([, v]) => unit <= Number(v)) : null;
+    parts.push(`Steht auf deiner Wunschliste („${watched.name}“)${hit ? ` – der Preis erreicht deine Schwelle „${hit[0]}“ (${fmtEur(Number(hit[1]))}${watched.quantity > 1 ? '/Stück' : ''})` : th.length ? ` – deine Schwelle „Gut“ liegt bei ${fmtEur(Number(watched.threshold_good ?? th[th.length - 1][1]))}${watched.quantity > 1 ? ' pro Stück' : ''}` : ''}.`);
     if (hit && verdict === 'unknown') verdict = 'good';
   }
   return { name, price, url, verdict, summary: parts.join(' '),

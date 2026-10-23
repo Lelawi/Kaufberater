@@ -23,6 +23,8 @@ export interface ProductRow {
   return_until: Date | null;
   window_end: Date | null;
   window_type: string;
+  quantity: number;
+  best_basket?: any;
 }
 
 export function toQuery(p: Pick<ProductRow, 'id' | 'name' | 'brand' | 'model' | 'ean' | 'search_terms' | 'exclude_terms'>): ProductQuery {

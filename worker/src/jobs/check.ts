@@ -8,6 +8,7 @@ import type { OfferData } from '../adapters/types.ts';
 import { plausibleOffers } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
 import { pageHistory } from '../util/history.ts';
+import { offerPackSize, packSize } from '../util/pack.ts';
 
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
@@ -127,6 +128,7 @@ async function saveOffers(l: DueListing, offersIn: OfferData[]) {
     shipping: o.shipping ?? null, total: Math.round((o.price + (o.shipping ?? 0)) * 100) / 100, list_price: o.listPrice ?? null,
     in_stock: o.inStock ?? null, delivery_text: o.deliveryText?.slice(0, 200) ?? null, seller: o.seller?.slice(0, 200) ?? null,
     shop_rating: o.shopRating ?? null, shop_reviews: o.shopReviews ?? null, gone: false,
+    pack_size: offerPackSize(o.title, l.title),
   }));
   // Alle Angebote in einem Schritt speichern
   const saved = await sql`
@@ -136,6 +138,7 @@ async function saveOffers(l: DueListing, offersIn: OfferData[]) {
       url = excluded.url, price = excluded.price, shipping = excluded.shipping, total = excluded.total, list_price = excluded.list_price,
       in_stock = excluded.in_stock, delivery_text = excluded.delivery_text, seller = excluded.seller,
       shop_rating = coalesce(excluded.shop_rating, kb_offers.shop_rating), shop_reviews = coalesce(excluded.shop_reviews, kb_offers.shop_reviews),
+      pack_size = excluded.pack_size,
       last_seen_at = now(), gone = false
     returning id, offer_key`;
   const idByKey = new Map(saved.map((r) => [r.offer_key as string, r.id as string]));
@@ -150,7 +153,7 @@ async function saveOffers(l: DueListing, offersIn: OfferData[]) {
     if (changed && p) changes++;
     if (changed || stale) {
       hist.push({ product_id: l.product_id, user_id: l.user_id, offer_id: idByKey.get(r.offer_key) ?? null, series: 'offer',
-        shop: r.shop, condition: r.condition, total: r.total, in_stock: r.in_stock });
+        shop: r.shop, condition: r.condition, total: r.total, in_stock: r.in_stock, pack_size: r.pack_size });
     }
   }
   if (hist.length) await sql`insert into kb_price_history ${sql(hist)}`;
@@ -169,7 +172,7 @@ async function importHistory(l: DueListing, hist: { date: string; price: number 
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
   const rows = hist.filter((h) => h.date < today && (!last || h.date > last)).map((h) => ({
     product_id: l.product_id, user_id: l.user_id, series, shop: l.external_id, condition: 'new',
-    observed_at: new Date(`${h.date}T12:00:00+01:00`), total: h.price, in_stock: null,
+    observed_at: new Date(`${h.date}T12:00:00+01:00`), total: h.price, in_stock: null, pack_size: packSize(l.title) ?? 1,
   }));
   if (rows.length) await sql`insert into kb_price_history ${sql(rows)}`;
 }

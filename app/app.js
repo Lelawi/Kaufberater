@@ -1,5 +1,5 @@
 // Kaufberater – App (läuft komplett im Browser, Daten liegen in Supabase)
-import { sb, html, raw, esc, safeUrl, fmtEur, fmtEur0, priceTag, fmtDate, ago, daysUntil, levelOf, LEVEL_TEXT, toast, md, nextShoppingEvent, hotWindow } from './lib.js';
+import { sb, html, raw, esc, safeUrl, fmtEur, fmtEur0, priceTag, fmtDate, ago, daysUntil, levelOf, LEVEL_TEXT, toast, md, nextShoppingEvent, hotWindow, packText, cheapestBasket, basketText } from './lib.js';
 import { ladder, priceChart } from './chart.js';
 
 /** Läuft die Oberfläche in der iPhone-App (statt im Browser)? */
@@ -120,7 +120,7 @@ function viewLogin(mode = 'login') {
 async function viewList() {
   loading();
   const { data: products, error } = await sb.from('kb_products')
-    .select('id,name,brand,model,status,window_start,window_end,window_type,threshold_good,threshold_top,threshold_instant,max_price,best_price,best_refurb_price,lowest_seen,last_checked_at,discovery_status,analysis_status,bought_price,bought_at,return_until,include_refurb,created_at')
+    .select('id,name,brand,model,status,window_start,window_end,window_type,threshold_good,threshold_top,threshold_instant,max_price,best_price,best_refurb_price,lowest_seen,last_checked_at,discovery_status,analysis_status,bought_price,bought_at,return_until,include_refurb,created_at,quantity,best_basket')
     .order('created_at', { ascending: false });
   if (error) throw error;
   // Preisentwicklung der letzten Woche
@@ -201,12 +201,13 @@ function row(p) {
   }
   if (p.status === 'bought' && p.return_until) meta.push(`Rückgabe bis ${fmtDate(p.return_until, { day: 'numeric', month: 'short' })}`);
   if (p.best_refurb_price && p.include_refurb && p.status === 'watching') meta.push(`Refurbished ab ${fmtEur0(p.best_refurb_price)}`);
+  if (p.quantity > 1 && p.status === 'watching') meta.unshift(p.best_basket ? `${p.quantity} Stück: ${fmtEur0(p.best_basket.effective ?? p.best_basket.total)}` : `${p.quantity} Stück`);
   if (p.trend7 && Math.abs(p.trend7) >= 1 && p.status === 'watching') meta.unshift(p.trend7 < 0 ? `↓ ${fmtEur0(-p.trend7)} in 7 Tagen` : `↑ ${fmtEur0(p.trend7)} in 7 Tagen`);
   const price = p.status === 'bought' ? p.bought_price : p.best_price;
   return html`<a class="row" href="#/p/${p.id}">
     <div class="name">${p.name}</div>
     <div class="price">${lvl === 'instant' ? html`<span class="tag-instant">${priceTag(price, 'price-mid')}</span>` : priceTag(price, 'price-mid')}
-      <div class="price-sub">${p.status === 'bought' ? 'bezahlt' : lvl ? html`<span class="pill ${lvl}">${LEVEL_TEXT[lvl]}</span>` : ''}</div></div>
+      <div class="price-sub">${p.status === 'bought' ? 'bezahlt' : html`${p.quantity > 1 && price ? 'pro Stück ' : ''}${lvl ? html`<span class="pill ${lvl}">${LEVEL_TEXT[lvl]}</span>` : ''}`}</div></div>
     <div class="meta">${meta.join(' · ')}</div>
     ${p.status === 'watching' ? raw(ladder(p, p.best_price)) : ''}
   </a>`;
@@ -214,7 +215,7 @@ function row(p) {
 
 // ---------- Eintragen / Bearbeiten ----------
 async function viewEdit(id, params = new URLSearchParams()) {
-  let p = { name: '', brand: '', model: '', ean: '', notes: '', window_type: 'soft', include_refurb: true, want_alternative: true, search_terms: [], exclude_terms: [] };
+  let p = { name: '', brand: '', model: '', ean: '', notes: '', window_type: 'soft', include_refurb: true, want_alternative: true, search_terms: [], exclude_terms: [], quantity: 1 };
   if (id) {
     loading();
     const { data, error } = await sb.from('kb_products').select('*').eq('id', id).single();
@@ -243,7 +244,9 @@ async function viewEdit(id, params = new URLSearchParams()) {
         <label><input type="radio" name="wt" value="hard" ${p.window_type === 'hard' ? 'checked' : ''}><span>Muss bis dahin da sein</span></label>
       </div>
       <div class="hint">Leer lassen, wenn es keine Eile hat.</div></div>
-    <div class="field"><label for="max">Höchstens ausgeben <span class="muted">(optional)</span></label><input id="max" type="number" inputmode="decimal" step="1" min="0" value="${v(p.max_price)}" placeholder="€"></div>
+    <div class="field"><label for="qty">Wie viele brauchst du?</label><input id="qty" type="number" inputmode="numeric" step="1" min="1" max="1000" value="${v(p.quantity ?? 1)}" style="max-width:120px">
+      <div class="hint">Bei mehr als 1 (z. B. 40 Lampen) vergleicht die App Einzelstücke und Mehrfachpackungen pro Stück und rechnet je Händler den günstigsten Einkauf für die ganze Menge aus. Schwellen gelten dann pro Stück.</div></div>
+    <div class="field"><label for="max">Höchstens ausgeben <span class="muted">(optional${p.quantity > 1 ? ', insgesamt' : ''})</span></label><input id="max" type="number" inputmode="decimal" step="1" min="0" value="${v(p.max_price)}" placeholder="€"></div>
     <div class="field"><label class="check"><input id="refurb" type="checkbox" ${p.include_refurb ? 'checked' : ''}> Auch Refurbished, B-Ware und Warehouse-Angebote zeigen (getrennt von Neuware)</label></div>
     <div class="field"><label class="check"><input id="alt" type="checkbox" ${p.want_alternative ? 'checked' : ''}> Bei der Analyse nach einer günstigeren, gleichwertigen Alternative suchen</label></div>
     <details class="more" ${id ? 'open' : ''}><summary>Mehr Optionen</summary>
@@ -266,6 +269,7 @@ async function viewEdit(id, params = new URLSearchParams()) {
       window_start: g('ws').value || null, window_end: g('we').value || null,
       window_type: document.querySelector('input[name=wt]:checked').value,
       max_price: g('max').value ? Number(g('max').value) : null,
+      quantity: Math.min(1000, Math.max(1, Math.round(Number(g('qty').value) || 1))),
       include_refurb: g('refurb').checked, want_alternative: g('alt').checked,
       search_terms: split(g('terms').value), exclude_terms: split(g('excl').value),
     };
@@ -281,7 +285,11 @@ async function viewEdit(id, params = new URLSearchParams()) {
     const btn = e.target.querySelector('button[type=submit]'); btn.disabled = true;
     let res;
     if (id) {
-      const changedSearch = row.name !== p.name || row.model !== p.model || JSON.stringify(row.search_terms) !== JSON.stringify(p.search_terms);
+      const changedSearch = row.name !== p.name || row.model !== p.model || JSON.stringify(row.search_terms) !== JSON.stringify(p.search_terms)
+        || row.quantity !== (p.quantity ?? 1);   // Menge geändert: Packungsgrößen neu suchen und neu bewerten
+      // Menge geändert → Schwellen gelten jetzt pro Stück bzw. wieder pro Gerät: neu berechnen lassen
+      if ((row.quantity > 1) !== (p.quantity > 1) && !p.thresholds_manual) Object.assign(row, { threshold_good: null, threshold_top: null, threshold_instant: null, threshold_source: null });
+      if ((row.quantity > 1) !== (p.quantity > 1)) Object.assign(row, { lowest_seen: null, lowest_seen_at: null });
       if (changedSearch) Object.assign(row, { discovery_status: 'pending', analysis_status: 'queued', analysis_due_at: new Date().toISOString() });
       res = await sb.from('kb_products').update(row).eq('id', id).select('id').single();
     } else {
@@ -326,6 +334,8 @@ async function viewProduct(id) {
   const best = offers.find((o) => o.id === p.best_offer_id) ?? newOffers[0];
   const lvl = levelOf(p.best_price, p);
   const isBought = p.status === 'bought';
+  const multi = p.quantity > 1;
+  const bk = p.best_basket;
 
   const verdictText = { buy_now: 'Jetzt kaufen', wait: 'Warten', watch: 'Beobachten', buy_alternative: 'Alternative kaufen' };
   render(html`<a class="back" href="#/">Wunschliste</a>
@@ -334,7 +344,8 @@ async function viewProduct(id) {
     <div>
       ${isBought ? html`<div class="where">Gekauft am ${fmtDate(p.bought_at)} für</div>${priceTag(p.bought_price)}`
         : best ? html`${lvl === 'instant' ? html`<span class="tag-instant">${priceTag(p.best_price)}</span>` : priceTag(p.best_price)}
-            <div class="where">günstigste Neuware bei <a href="${safeUrl(best.url)}" target="_blank" rel="noopener">${best.shop}</a>${best.effective_notes ? html` · nach ${best.effective_notes}` : ''}</div>`
+            ${multi && bk ? html`<div class="where">pro Stück · <strong>${p.quantity} Stück für ${fmtEur(bk.effective ?? bk.total)}</strong> bei <a href="${safeUrl(best.url)}" target="_blank" rel="noopener">${best.shop}</a> (${bk.text}${bk.pieces > p.quantity ? `, ${bk.pieces} Stück` : ''})</div>`
+              : html`<div class="where">günstigste Neuware bei <a href="${safeUrl(best.url)}" target="_blank" rel="noopener">${best.shop}</a>${best.effective_notes ? html` · nach ${best.effective_notes}` : ''}</div>`}`
         : html`<div class="where">${p.discovery_status === 'done' ? 'Noch kein Angebot gefunden.' : 'Angebote werden beim nächsten Durchlauf gesucht.'}</div>`}
     </div>
     <div>${!isBought && lvl ? html`<span class="pill ${lvl}">${LEVEL_TEXT[lvl]}</span>` : ''}</div>
@@ -352,8 +363,10 @@ async function viewProduct(id) {
       </dl>
     </section>` : html`<section class="panel flat"><h2>Einschätzung</h2><p class="muted">${p.analysis_status === 'failed' ? 'Die Analyse ist fehlgeschlagen und wird erneut versucht.' : 'Die Tiefenanalyse (Preisgeschichte, Vorgänger, Aktionstage, Alternativen) läuft jeden Morgen und erscheint dann hier. Bis dahin gelten vorläufige Schwellen aus den gefundenen Preisen.'}</p></section>`}
 
+  ${multi && !isBought ? basketSection(p, offers) : ''}
+
   <section class="panel">
-    <h2>Kaufschwellen</h2>
+    <h2>Kaufschwellen${multi ? html` <span class="muted" style="font-weight:400">pro Stück</span>` : ''}</h2>
     <form id="thr" class="grid-2" style="grid-template-columns:repeat(3,1fr)">
       <div class="field"><label for="tg">Guter Preis</label><input id="tg" type="number" step="1" inputmode="decimal" value="${p.threshold_good ?? ''}"></div>
       <div class="field"><label for="tt">Top-Preis</label><input id="tt" type="number" step="1" inputmode="decimal" value="${p.threshold_top ?? ''}"></div>
@@ -363,18 +376,18 @@ async function viewProduct(id) {
       : p.threshold_source === 'auto' ? 'Vorläufig aus den gefundenen Preisen und früheren Deals berechnet. Die Tiefenanalyse verfeinert sie am nächsten Morgen. Wenn du sie änderst, gelten deine Werte.'
       : p.threshold_good ? 'Von der Tiefenanalyse festgelegt. Wenn du sie änderst, gelten deine Werte.'
       : 'Werden nach der ersten Preissuche automatisch gesetzt.'}</p>
-    ${p.max_price ? html`<p class="hint">Dein Höchstpreis: <strong>${fmtEur(p.max_price)}</strong> – sobald ein Angebot darunter liegt, kommt sofort eine Meldung.</p>` : ''}
+    ${p.max_price ? html`<p class="hint">Dein Höchstpreis: <strong>${fmtEur(p.max_price)}</strong>${multi ? ` für ${p.quantity} Stück` : ''} – sobald ein Angebot darunter liegt, kommt sofort eine Meldung.</p>` : ''}
     <div class="btn-row"><button class="btn small" id="saveThr">Schwellen speichern</button>${p.thresholds_manual ? html`<button class="btn small ghost" id="autoThr">Wieder der Analyse überlassen</button>` : ''}</div>
   </section>
 
-  <section class="panel"><h2>Preisverlauf</h2>${raw(priceChart(seriesR.data ?? [], p, a?.price_history))}${seriesLow(seriesR.data ?? [])}</section>
+  <section class="panel"><h2>Preisverlauf${multi ? html` <span class="muted" style="font-weight:400">pro Stück</span>` : ''}</h2>${raw(priceChart(seriesR.data ?? [], p, a?.price_history))}${seriesLow(seriesR.data ?? [])}</section>
 
   <section class="panel"><h2>Angebote Neuware <span class="muted" style="font-weight:400">${newOffers.length}</span></h2>
-    ${newOffers.length ? offerTable(newOffers) : html`<p class="muted">Noch keine.</p>`}</section>
+    ${newOffers.length ? offerTable(newOffers, false, multi) : html`<p class="muted">Noch keine.</p>`}</section>
   ${p.include_refurb ? html`<section class="panel"><h2>Refurbished, B-Ware, gebraucht <span class="muted" style="font-weight:400">${refurb.length}</span></h2>
-    ${refurb.length ? offerTable(refurb, true) : html`<p class="muted">Noch keine gefunden.</p>`}</section>` : ''}
+    ${refurb.length ? offerTable(refurb, true, multi) : html`<p class="muted">Noch keine gefunden.</p>`}</section>` : ''}
 
-  <section class="panel"><h2>Deals aus der Community</h2>${dealList(dealsR.data ?? [])}</section>
+  <section class="panel"><h2>Deals aus der Community</h2>${dealList(dealsR.data ?? [], multi)}</section>
 
   ${voucherSection(p, newOffers, vouchersR.data ?? [], ratesR.data ?? [], myVouchersR.data ?? [])}
 
@@ -401,7 +414,7 @@ async function viewProduct(id) {
     </div>
     <form id="boughtForm" hidden style="margin-top:16px">
       <div class="grid-2">
-        <div class="field"><label for="bp">Bezahlt (€)</label><input id="bp" type="number" step="0.01" required value="${best?.effective_total ?? best?.total ?? ''}"></div>
+        <div class="field"><label for="bp">Bezahlt (€${multi ? `, alle ${p.quantity} Stück` : ''})</label><input id="bp" type="number" step="0.01" required value="${multi && bk ? (bk.effective ?? bk.total) : best?.effective_total ?? best?.total ?? ''}"></div>
         <div class="field"><label for="bs">Bei</label><input id="bs" type="text" value="${best?.shop ?? ''}"></div>
       </div>
       <div class="grid-2">
@@ -470,6 +483,32 @@ async function viewProduct(id) {
   });
 }
 
+/** Mengen-Produkte: günstigster Einkauf je Händler für die benötigte Stückzahl (beliebige Packungsgrößen kombiniert) */
+function basketSection(p, offers) {
+  const trusted = (o) => !(o.shop_reviews != null && o.shop_reviews < 20) && !(o.shop_rating != null && Number(o.shop_rating) < 3.5 && (o.shop_reviews ?? 0) < 500);
+  const byShop = new Map();
+  for (const o of offers.filter((x) => x.condition === 'new' && x.in_stock !== false && trusted(x))) {
+    const k = normShop(o.shop); byShop.set(k, [...(byShop.get(k) ?? []), o]);
+  }
+  const rows = [];
+  for (const list of byShop.values()) {
+    const b = cheapestBasket(list.map((o) => ({ ...o, pack: o.pack_size ?? 1, price: o.price })), p.quantity);
+    if (b) rows.push({ shop: list[0].shop, b, url: b.items[0].offer.url });
+  }
+  rows.sort((a, b) => a.b.total - b.b.total);
+  if (!rows.length) return '';
+  const singles = rows.filter((r) => r.b.items.every((i) => i.pack === 1)).sort((a, b) => a.b.total - b.b.total)[0];
+  const save = singles && rows[0] !== singles ? singles.b.total - rows[0].b.total : 0;
+  return html`<section class="panel"><h2>Bester Einkauf für ${p.quantity} Stück</h2>
+    <p class="hint" style="margin-top:-6px">Je Händler die günstigste Kombination aus Einzelstücken und Packungen, Versand einmal pro Bestellung (vor Gutscheinen/Cashback).${save >= 1 ? html` Gegenüber Einzelkauf sparst du <strong>${fmtEur(save)}</strong>.` : ''}</p>
+    <table class="table offers"><thead><tr><th>Händler</th><th class="r">Gesamt</th></tr></thead><tbody>
+    ${rows.slice(0, 5).map((r, i) => html`<tr class="${i === 0 ? 'best' : ''}">
+      <td><a class="shop" href="${safeUrl(r.url)}" target="_blank" rel="noopener">${r.shop}</a>
+        <div class="hint">${basketText(r.b)}${r.b.pieces > p.quantity ? ` = ${r.b.pieces} Stück` : ''}${r.b.shipping ? ` · ${fmtEur(r.b.shipping)} Versand` : ''}</div></td>
+      <td class="r"><span class="num price-cell">${fmtEur(r.b.total)}</span><div class="hint">${fmtEur(r.b.total / p.quantity)}/Stück</div></td></tr>`)}
+    </tbody></table></section>`;
+}
+
 /** Gleicher Händler über mehrere Preisvergleiche (idealo, billiger.de …) → nur das günstigste Angebot zeigen */
 function normShop(s) {
   return String(s ?? '').toLowerCase().replace(/\s*\(.*?\)\s*/g, '').replace(/^www\./, '').replace(/\.(de|com|at|fr|it|es|nl|eu)(\/.*)?$/, '')
@@ -478,7 +517,7 @@ function normShop(s) {
 function mergeOffers(list) {
   const map = new Map();
   for (const o of list) {
-    const k = normShop(o.shop) + '|' + o.condition;
+    const k = normShop(o.shop) + '|' + o.condition + '|' + (o.pack_size ?? 1);
     const cur = map.get(k);
     const price = Number(o.effective_total ?? o.total);
     if (!cur) { map.set(k, { ...o, via: new Set([o.source]) }); continue; }
@@ -503,7 +542,9 @@ function shopTrust(o) {
   return '';
 }
 
-function offerTable(list, showCondition = false) {
+function offerTable(list, showCondition = false, perPiece = false) {
+  const unit = (o) => Number(o.effective_total ?? o.total) / Math.max(1, Number(o.pack_size ?? 1));
+  if (perPiece) list = [...list].sort((a, b) => unit(a) - unit(b));
   const condText = { refurbished: 'Refurbished', bware: 'B-Ware', used: 'Gebraucht', new: 'Neu' };
   // „über …“ nur bei Preisvergleichen/Marktplätzen – bei Shops, die direkt abgefragt werden, ist es der Shop selbst
   const VIA = { idealo: 'idealo', billiger: 'billiger.de', geizhals: 'Geizhals', check24: 'CHECK24', ebay: 'eBay' };
@@ -511,9 +552,9 @@ function offerTable(list, showCondition = false) {
   const via = (o) => viaList(o).join(', ');
   const rowHtml = (o, i) => html`<tr class="${i === 0 ? 'best' : ''}">
       <td><a class="shop" href="${safeUrl(o.url)}" target="_blank" rel="noopener">${o.shop}</a>${o.country && o.country !== 'DE' ? html` <span class="muted">(${o.country})</span>` : ''}
-        <div class="hint">${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${viaList(o).length ? html`<br>über ${via(o)}` : ''}${shopTrust(o)}</div></td>
+        <div class="hint">${o.pack_size > 1 ? html`<strong>${packText(o.pack_size)}</strong> · ` : ''}${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${viaList(o).length ? html`<br>über ${via(o)}` : ''}${shopTrust(o)}</div></td>
       <td class="r"><span class="num price-cell">${fmtEur(o.effective_total ?? o.total)}</span>
-        <div class="hint">${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}</div></td>
+        <div class="hint">${o.pack_size > 1 ? html`<strong>${fmtEur(unit(o))}/Stück</strong><br>` : ''}${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}</div></td>
     </tr>`;
   const SHOW = 8;
   const head = html`<thead><tr><th>Händler</th><th class="r">Endpreis</th></tr></thead>`;
@@ -549,13 +590,13 @@ function voucherSection(p, offers, vouchers, rates, mine) {
   </section>`;
 }
 
-function dealList(deals) {
+function dealList(deals, perPiece = false) {
   if (!deals.length) return html`<p class="muted">Noch keine passenden Deals auf mydealz & Co. gefunden.</p>`;
   const portals = { mydealz: 'mydealz', preisjaeger: 'Preisjäger', dealabs: 'Dealabs (FR)', chollometro: 'Chollometro (ES)', pepperit: 'Pepper (IT)' };
   return html`<ul class="list-plain">${deals.slice(0, 15).map((d) => html`<li style="align-items:flex-start">
     <div><a href="${safeUrl(d.url)}" target="_blank" rel="noopener">${d.title.slice(0, 110)}</a>
-      <div class="hint">${portals[d.portal] ?? d.portal}${d.merchant ? ' · ' + d.merchant : ''} · ${fmtDate(d.posted_at)}${d.temperature !== null ? ` · ${Math.round(d.temperature)}°` : ''}${d.expired ? ' · abgelaufen' : ''}${d.notes ? ' · ' + d.notes : ''}</div></div>
-    <div class="num" style="font-weight:700;white-space:nowrap">${d.price ? fmtEur(d.price) : ''}</div></li>`)}</ul>
+      <div class="hint">${d.pack_size > 1 ? html`<strong>${packText(d.pack_size)}</strong>${perPiece ? '' : ' (nicht mit Einzelpreis vergleichbar)'} · ` : ''}${portals[d.portal] ?? d.portal}${d.merchant ? ' · ' + d.merchant : ''} · ${fmtDate(d.posted_at)}${d.temperature !== null ? ` · ${Math.round(d.temperature)}°` : ''}${d.expired ? ' · abgelaufen' : ''}${d.notes ? ' · ' + d.notes : ''}</div></div>
+    <div class="num" style="font-weight:700;white-space:nowrap;text-align:right">${d.price ? fmtEur(d.price) : ''}${d.price && d.pack_size > 1 ? html`<div class="hint" style="font-weight:400">${fmtEur(d.price / d.pack_size)}/Stück</div>` : ''}</div></li>`)}</ul>
     <p class="hint">Abgelaufene Deals zeigen, welche Preise schon einmal möglich waren.</p>`;
 }
 

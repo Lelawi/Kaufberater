@@ -51,7 +51,8 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
       const good = cands
         .filter((c: Candidate) => c.score >= MIN_SCORE)
         .sort((a: Candidate, b: Candidate) => b.score - a.score)
-        .slice(0, source.kind === 'aggregator' ? 4 : MAX_PER_SOURCE);
+        // Mengen-Produkte: mehr Treffer behalten – das sind meist verschiedene Packungsgrößen (1er, 3er, 6er, 18er …)
+        .slice(0, (source.kind === 'aggregator' ? 4 : MAX_PER_SOURCE) * ((p.quantity ?? 1) > 1 ? 3 : 1));
       for (const c of good) {
         for (const v of variantCodes(q, c.title ?? '')) learned.add(v);
         const ins = await sql`

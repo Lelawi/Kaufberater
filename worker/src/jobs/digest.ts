@@ -15,8 +15,8 @@ export async function runDigest(force = false) {
   const ev = nextShoppingEvent(now);
   for (const u of users) {
     const rows = await sql`
-      select p.name, p.best_price, p.threshold_good,
-        (select min(h.total) from kb_price_history h where h.product_id = p.id and h.series = 'offer' and h.condition = 'new'
+      select p.name, p.best_price, p.threshold_good, p.quantity,
+        (select min(h.total / case when p.quantity > 1 then h.pack_size else 1 end) from kb_price_history h where h.product_id = p.id and h.series = 'offer' and h.condition = 'new'
            and h.observed_at between now() - interval '8 days' and now() - interval '6 days') as before
       from kb_products p where p.user_id = ${u.user_id} and p.status = 'watching' and p.best_price is not null
       order by p.name`;
@@ -25,7 +25,7 @@ export async function runDigest(force = false) {
       const diff = r.before ? r.best_price - r.before : null;
       const trend = diff === null ? '' : diff < -1 ? ` (↓ ${fmtEur(-diff)})` : diff > 1 ? ` (↑ ${fmtEur(diff)})` : ' (unverändert)';
       const gap = r.threshold_good && r.best_price > r.threshold_good ? `, noch ${fmtEur(r.best_price - r.threshold_good)} bis „gut“` : r.threshold_good ? ', unter „gut“!' : '';
-      return `${r.name}: ${fmtEur(r.best_price)}${trend}${gap}`;
+      return `${r.name}: ${fmtEur(r.best_price)}${r.quantity > 1 ? '/Stück' : ''}${trend}${gap}`;
     });
     const n = await createAlert({
       userId: u.user_id, productId: null, kind: 'system', level: 'info',
