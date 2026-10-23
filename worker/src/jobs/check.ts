@@ -7,7 +7,7 @@ import { blockedSources, recordSourceResult } from './health.ts';
 import type { OfferData } from '../adapters/types.ts';
 import { plausibleOffers } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
-import { pageHistory } from '../util/history.ts';
+import { pageHistory, pageImage } from '../util/history.ts';
 import { offerPackSize, packSize } from '../util/pack.ts';
 
 interface DueListing {
@@ -70,6 +70,13 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
           }
         }
         const r = await saveOffers(l, usable);
+        // Vorschaubild für die Liste: das erste gefundene Produktbild (Preisvergleiche zuerst – dort sind es saubere Produktfotos)
+        if (pageImage.has(l.url)) {
+          const img = pageImage.get(l.url)!; pageImage.delete(l.url);
+          await sql`update kb_products set image_url = ${img} where id = ${l.product_id}
+                    and (image_url is null or (${adapter.kind === 'aggregator'} and image_url not like '%idealo%' and image_url not like '%billiger%'))
+                    and image_url is distinct from ${img}`;
+        }
         if (pageHistory.has(l.url)) { await importHistory(l, pageHistory.get(l.url)).catch((e) => console.log('Preisverlauf:', e.message)); pageHistory.delete(l.url); }
         // Nur per Link eingetragen? Dann den richtigen Produktnamen von der Seite übernehmen und danach überall suchen
         const pageTitle = offers.find((o) => o.title)?.title;

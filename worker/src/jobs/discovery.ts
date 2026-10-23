@@ -4,7 +4,8 @@ import { SOURCES, availableHere } from '../adapters/registry.ts';
 import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
 import type { Candidate } from '../adapters/types.ts';
-import { variantCodes } from '../util/match.ts';
+import { variantCodes, modelKeys } from '../util/match.ts';
+import { cleanName, variantSuggestions } from '../util/naming.ts';
 import { ebayConfigured } from '../adapters/ebay.ts';
 
 const MIN_SCORE = 0.75;
@@ -44,6 +45,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
     }));
     let ok = 0;
     const learned = new Set<string>();
+    const goodTitles: string[] = [];
     for (const r of results) {
       if (r.status !== 'fulfilled') continue;
       ok++;
@@ -63,6 +65,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
             set url = excluded.url, title = excluded.title, match_score = greatest(kb_listings.match_score, excluded.match_score)
           returning (xmax = 0) as inserted`;
         if (ins[0]?.inserted) listingsAdded++;
+        if (c.score >= 0.8 && c.title) goodTitles.push(c.title);
       }
     }
     // Gefundene Modellvarianten (z. B. OLED77G68LW, OLED77G67LW) merken: verbessert die Deal-Suche und spätere Suchen
@@ -72,6 +75,24 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
     await sql`update kb_products set discovery_status = ${ok > 0 ? 'done' : 'failed'},
               discovery_at = ${failed > 0 ? sql`now() - interval '7 days' + interval '6 hours'` : sql`now()`},
               search_terms = ${[...(p.search_terms ?? []), ...newTerms]} where id = ${p.id}`;
+    await tidyName(p, goodTitles).catch((e) => console.log('Name:', (e as Error).message));
   }
   return { products: products.length, listingsAdded };
+}
+
+/** Sauberer Name aus den Treffern; ohne Modellnummer und bei mehreren Produktvarianten: Auswahl für die App */
+async function tidyName(p: ProductRow, titles: string[]) {
+  if (p.name_confirmed || p.name_auto) return;
+  const sql = await db();
+  if (titles.length) {
+    const clean = cleanName(p.name, titles, p.brand);
+    if (clean !== p.name) {
+      await sql`update kb_products set name = ${clean}, name_original = coalesce(name_original, ${p.name}) where id = ${p.id} and not name_confirmed and name = ${p.name}`;
+      p.name = clean;
+    }
+  }
+  if (modelKeys(toQuery(p)).length) return;   // Modellnummer → eindeutig
+  const listings = await sql`select id, title from kb_listings where product_id = ${p.id} and not rejected and active and title is not null and match_score >= 0.75`;
+  const sugg = variantSuggestions(p.name, listings.map((l) => ({ id: l.id as string, title: l.title as string })));
+  await sql`update kb_products set name_suggestions = ${sugg.length > 1 ? sql.json(sugg as any) : null} where id = ${p.id} and not name_confirmed`;
 }

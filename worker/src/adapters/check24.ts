@@ -2,7 +2,7 @@
 // (Amazon, Galaxus, Kaufland, computeruniverse …). Suche + Produktseite mit allen Angeboten, Versand, Lieferzeit und Preisverlauf.
 import { fetchPage } from '../util/http.ts';
 import { matchTitle, searchQuery, type ProductQuery } from '../util/match.ts';
-import { pageHistory, type HistPoint } from '../util/history.ts';
+import { pageHistory, rememberImage, type HistPoint } from '../util/history.ts';
 import { cleanText, conditionFromTitle } from './common.ts';
 import type { Candidate, ListingRef, OfferData, SourceAdapter } from './types.ts';
 
@@ -90,6 +90,7 @@ export const check24Adapter: SourceAdapter = {
     const p = await fetchPage(l.url, { minDelayMs: 3500 });
     const r = parseCheck24Product(p.text, l.url);
     if (r.history.length) pageHistory.set(l.url, r.history);
+    rememberImage(l.url, p.text);
     return r.offers;
   },
 };

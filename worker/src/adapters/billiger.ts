@@ -1,6 +1,6 @@
 // billiger.de: zweiter großer Preisvergleich (andere Händlerauswahl als idealo)
 import { fetchPage } from '../util/http.ts';
-import { pageHistory } from '../util/history.ts';
+import { pageHistory, rememberImage } from '../util/history.ts';
 import { loadHtml, jsonLdNodes } from '../util/extract.ts';
 import { matchTitle, searchQuery, type ProductQuery } from '../util/match.ts';
 import { parsePrice } from '../util/money.ts';
@@ -89,6 +89,7 @@ async function fetchOffers(l: ListingRef): Promise<OfferData[]> {
   const p = await fetchPage(l.url, { minDelayMs: 3000 });
   const hist = parseBilligerHistory(p.text);
   if (hist.length) pageHistory.set(l.url, hist);
+  rememberImage(l.url, p.text);
   const r = parseBilligerOffers(p.text, p.url);
   if (!r.offers.length) {
     // Rückfall: Angebotsliste aus den Produktdaten (ohne Versand)

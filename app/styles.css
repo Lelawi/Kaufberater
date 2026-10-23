@@ -121,12 +121,22 @@ details.more > summary { cursor: pointer; color: var(--ink-2); font-weight: 500;
 .group-title { font: 600 15px/1.2 var(--font); color: var(--ink-2); margin: 24px 0 8px; display: flex; gap: 8px; align-items: baseline; }
 .group-title .count { color: var(--ink-3); font-weight: 400; }
 .rows { background: var(--surface); border-radius: var(--radius-m); box-shadow: var(--shadow); overflow: hidden; }
-.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 14px 16px; text-decoration: none; border-top: 1px solid var(--line); align-items: center; }
+.row { display: grid; grid-template-columns: 48px 1fr auto; gap: 4px 12px; padding: 14px 16px; text-decoration: none; border-top: 1px solid var(--line); align-items: center; }
 .row:first-child { border-top: 0; }
 .row:hover { background: var(--surface-2); }
 .row .name { font-weight: 600; line-height: 1.25; }
-.row .meta { color: var(--ink-3); font-size: 14px; grid-column: 1; }
-.row .price { grid-row: 1 / span 2; grid-column: 2; text-align: right; }
+.row .name { grid-column: 2; }
+.row .meta { color: var(--ink-3); font-size: 14px; grid-column: 2; }
+.row .price { grid-row: 1 / span 2; grid-column: 3; text-align: right; }
+.row .thumb { grid-row: 1 / span 2; grid-column: 1; }
+/* Vorschaubild: Produktfoto auf hellem Grund (Fotos haben meist weißen Hintergrund), sonst Anfangsbuchstabe */
+.thumb, .thumb-lg { display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 10px;
+  background: #fff; object-fit: contain; padding: 3px; box-sizing: border-box; border: 1px solid var(--line); flex: none; }
+.thumb.ph, .thumb-lg.ph { background: var(--surface-2); color: var(--ink-3); font-weight: 700; font-size: 20px; padding: 0; }
+.hero h1 { display: flex; align-items: center; gap: 12px; }
+.thumb-lg { width: 64px; height: 64px; border-radius: 12px; }
+.thumb-lg.ph { display: none; }
+.which-list { display: grid; gap: 8px; }
 .row .ladder { grid-column: 1 / -1; margin-top: 8px; }
 
 /* Der Preis wie auf dem Regaletikett */

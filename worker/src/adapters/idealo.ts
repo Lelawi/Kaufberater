@@ -5,6 +5,7 @@ import { loadHtml, extractProduct } from '../util/extract.ts';
 import { matchTitle, searchQuery, type ProductQuery } from '../util/match.ts';
 import { parsePrice } from '../util/money.ts';
 import { cleanText, conditionFromTitle } from './common.ts';
+import { rememberImage } from '../util/history.ts';
 import type { Candidate, ListingRef, OfferData, SourceAdapter } from './types.ts';
 
 const BASE = 'https://www.idealo.de';
@@ -81,6 +82,7 @@ async function search(q: ProductQuery): Promise<Candidate[]> {
 
 async function fetchOffers(l: ListingRef): Promise<OfferData[]> {
   const p = await fetchPage(l.url, { minDelayMs: 3000 });
+  rememberImage(l.url, p.text);
   const offers = parseIdealoOffers(p.text, p.url);
   if (!offers.length) {
     // Zur Fehlersuche festhalten, wie die leere Seite aussah (idealo liefert gelegentlich Seiten ohne Angebotsliste)

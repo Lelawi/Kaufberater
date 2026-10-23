@@ -25,3 +25,17 @@ test('Günstigster Einkauf für eine Menge', () => {
   const b3 = cheapestBasket(o, 3)!;             // 3er (55,90 + 4,95 Versand = 60,85) vs. 2er + 1er (70,80) – Versand einmal
   assert.equal(b3.total, 60.85);
 });
+
+import { cleanName, variantSuggestions } from '../src/util/naming.ts';
+test('Saubere Namen und Rückfrage bei Varianten', () => {
+  assert.equal(cleanName('Lg oled77c6', ['LG OLED77C68LA', 'LG OLED77C6ELB 77" OLED evo']), 'LG OLED77C6');
+  assert.equal(cleanName('Philips hue gu10 white ambiance', ['Philips Hue White Ambiance GU10 3er-Pack', 'PHILIPS Hue White Ambiance GU10']), 'Philips Hue GU10 White Ambiance');
+  const s = variantSuggestions('Philips hue gu10 white ambiance', [
+    'Philips Hue White Ambiance GU10 3er-Pack', 'Philips Hue White Ambiance GU10 Doppelpack mit Bridge',
+    'Philips Hue Essential White & Color Ambiance GU10 345 lm 4,7 W 1 St.', 'Philips Hue White Ambiance GU10 Doppelpack',
+  ].map((title, i) => ({ id: String(i), title })));
+  assert.deepEqual(s.map((x) => x.label), ['Philips Hue White Ambiance GU10', 'Philips Hue White Ambiance GU10 mit Bridge', 'Philips Hue Essential White & Color Ambiance GU10']);
+  assert.deepEqual(s[0].listing_ids, ['0', '3']);
+  // Gleiches Produkt in verschiedenen Packungen → keine Rückfrage
+  assert.equal(variantSuggestions('Philips hue gu10 white ambiance', [{ id: 'a', title: 'Philips Hue White Ambiance GU10 3er-Pack' }, { id: 'b', title: 'Philips Hue White Ambiance GU10 18er-Pack' }]).length, 1);
+});

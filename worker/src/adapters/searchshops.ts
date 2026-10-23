@@ -1,6 +1,7 @@
 // Shops mit eigener Suche: pro Shop nur eine kleine Konfiguration (Such-Adresse + wie die Treffer ausgelesen werden).
 // Gefundene Produktseiten werden danach wie jede Shopseite über die eingebetteten Produktdaten (schema.org) abgefragt.
 import { fetchPage } from '../util/http.ts';
+import { rememberImage } from '../util/history.ts';
 import { jsonLdNodes, loadHtml, embeddedJson, deepFind, absUrl, extractProduct } from '../util/extract.ts';
 import { matchTitle, searchQuery, type ProductQuery } from '../util/match.ts';
 import { parsePrice } from '../util/money.ts';
@@ -133,6 +134,7 @@ export function makeSearchShop(cfg: SearchShopConfig): SourceAdapter {
     },
     async fetch(l: ListingRef): Promise<OfferData[]> {
       const p = await fetchPage(l.url, { country: cfg.country, minDelayMs: delay });
+      rememberImage(l.url, p.text);
       const o = (cfg.parseProduct ? cfg.parseProduct(p.text, p.url) : parseShopPage(p.text, p.url)) ?? offerNode(p.text, p.url);
       if (!o) throw new Error('kein Preis auf der Seite gefunden');
       o.shop = cfg.label;

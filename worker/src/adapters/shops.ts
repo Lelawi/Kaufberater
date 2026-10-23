@@ -2,6 +2,7 @@
 // meisten Shops. Für Shops mit Besonderheiten gibt es kleine Zusatzregeln (Preis-Selektor usw.).
 import { fetchPage } from '../util/http.ts';
 import { extractProduct, loadHtml } from '../util/extract.ts';
+import { rememberImage } from '../util/history.ts';
 import { parsePrice } from '../util/money.ts';
 import { hostOf } from '../util/shop.ts';
 import { cleanText, conditionFromTitle } from './common.ts';
@@ -93,6 +94,7 @@ export const shopAdapter: SourceAdapter = {
       const p = await fetchPage(l.url, { country: l.country, minDelayMs: 4000 });
       html = p.text; finalUrl = p.url;
     }
+    rememberImage(l.url, html);
     const o = parseShopPage(html, finalUrl);
     if (!o) throw new Error('kein Preis auf der Seite gefunden');
     if (l.condition !== 'new' && o.condition === 'new') o.condition = l.condition;

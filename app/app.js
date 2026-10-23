@@ -120,7 +120,7 @@ function viewLogin(mode = 'login') {
 async function viewList() {
   loading();
   const { data: products, error } = await sb.from('kb_products')
-    .select('id,name,brand,model,status,window_start,window_end,window_type,threshold_good,threshold_top,threshold_instant,max_price,best_price,best_refurb_price,lowest_seen,last_checked_at,discovery_status,analysis_status,bought_price,bought_at,return_until,include_refurb,created_at,quantity,best_basket')
+    .select('id,name,brand,model,status,window_start,window_end,window_type,threshold_good,threshold_top,threshold_instant,max_price,best_price,best_refurb_price,lowest_seen,last_checked_at,discovery_status,analysis_status,bought_price,bought_at,return_until,include_refurb,created_at,quantity,best_basket,image_url,name_suggestions,name_confirmed')
     .order('created_at', { ascending: false });
   if (error) throw error;
   // Preisentwicklung der letzten Woche
@@ -201,10 +201,12 @@ function row(p) {
   }
   if (p.status === 'bought' && p.return_until) meta.push(`Rückgabe bis ${fmtDate(p.return_until, { day: 'numeric', month: 'short' })}`);
   if (p.best_refurb_price && p.include_refurb && p.status === 'watching') meta.push(`Refurbished ab ${fmtEur0(p.best_refurb_price)}`);
+  if (p.name_suggestions?.length && !p.name_confirmed && p.status === 'watching') meta.unshift('Welches Produkt genau? Bitte bestätigen');
   if (p.quantity > 1 && p.status === 'watching') meta.unshift(p.best_basket ? `${p.quantity} Stück: ${fmtEur0(p.best_basket.effective ?? p.best_basket.total)}` : `${p.quantity} Stück`);
   if (p.trend7 && Math.abs(p.trend7) >= 1 && p.status === 'watching') meta.unshift(p.trend7 < 0 ? `↓ ${fmtEur0(-p.trend7)} in 7 Tagen` : `↑ ${fmtEur0(p.trend7)} in 7 Tagen`);
   const price = p.status === 'bought' ? p.bought_price : p.best_price;
   return html`<a class="row" href="#/p/${p.id}">
+    ${thumb(p)}
     <div class="name">${p.name}</div>
     <div class="price">${lvl === 'instant' ? html`<span class="tag-instant">${priceTag(price, 'price-mid')}</span>` : priceTag(price, 'price-mid')}
       <div class="price-sub">${p.status === 'bought' ? 'bezahlt' : html`${p.quantity > 1 && price ? 'pro Stück ' : ''}${lvl ? html`<span class="pill ${lvl}">${LEVEL_TEXT[lvl]}</span>` : ''}`}</div></div>
@@ -212,6 +214,21 @@ function row(p) {
     ${p.status === 'watching' ? raw(ladder(p, p.best_price)) : ''}
   </a>`;
 }
+
+/** Vorschaubild (oder Anfangsbuchstabe, solange noch keins gefunden ist) */
+function thumb(p, cls = 'thumb') {
+  const letter = ((p.name || '').trim().match(/[\p{L}\p{N}]/u)?.[0] ?? '•').toUpperCase();
+  // Bild lädt nicht (Shop blockt Einbinden) → Anfangsbuchstabe (siehe Fehler-Listener unten)
+  if (p.image_url) return html`<img class="${cls}" src="${safeUrl(p.image_url)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-letter="${letter}">`;
+  return html`<span class="${cls} ph" aria-hidden="true">${letter}</span>`;
+}
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.dataset.letter) return;
+  const span = document.createElement('span');
+  span.className = img.className + ' ph'; span.textContent = img.dataset.letter; span.setAttribute('aria-hidden', 'true');
+  img.replaceWith(span);
+}, true);
 
 // ---------- Eintragen / Bearbeiten ----------
 async function viewEdit(id, params = new URLSearchParams()) {
@@ -339,8 +356,9 @@ async function viewProduct(id) {
 
   const verdictText = { buy_now: 'Jetzt kaufen', wait: 'Warten', watch: 'Beobachten', buy_alternative: 'Alternative kaufen' };
   render(html`<a class="back" href="#/">Wunschliste</a>
+  ${p.name_suggestions?.length && !p.name_confirmed && !isBought ? whichProduct(p) : ''}
   <section class="hero">
-    <h1>${p.name}</h1>
+    <h1>${thumb(p, 'thumb-lg')}${p.name}</h1>
     <div>
       ${isBought ? html`<div class="where">Gekauft am ${fmtDate(p.bought_at)} für</div>${priceTag(p.bought_price)}`
         : best ? html`${lvl === 'instant' ? html`<span class="tag-instant">${priceTag(p.best_price)}</span>` : priceTag(p.best_price)}
@@ -427,6 +445,12 @@ async function viewProduct(id) {
   </section>`);
 
   // Aktionen
+  document.getElementById('whichOk')?.addEventListener('click', () => {
+    const picked = [...view.querySelectorAll('#which input:checked')].map((x) => Number(x.value));
+    if (!picked.length) return toast('Bitte mindestens eines auswählen');
+    answerWhich(p, picked);
+  });
+  document.getElementById('whichAll')?.addEventListener('click', () => answerWhich(p, (p.name_suggestions ?? []).map((_, i) => i)));
   const num = (x) => (document.getElementById(x).value ? Number(document.getElementById(x).value) : null);
   document.getElementById('saveThr').onclick = async () => {
     const { error } = await sb.from('kb_products').update({ threshold_good: num('tg'), threshold_top: num('tt'), threshold_instant: num('ti'), thresholds_manual: true, threshold_source: 'manual' }).eq('id', id);
@@ -481,6 +505,34 @@ async function viewProduct(id) {
     const { error } = await sb.rpc('kb_add_listing', { p_product: id, p_url: document.getElementById('lurl').value.trim() });
     toast(error ? error.message : 'Link wird ab dem nächsten Durchlauf überwacht'); if (!error) route();
   });
+}
+
+/** Rückfrage: Welches Produkt ist gemeint? (mehrere Varianten passen zum eingetippten Namen) */
+function whichProduct(p) {
+  return html`<section class="panel" id="which"><h2>Welches Produkt meinst du?</h2>
+    <p class="hint" style="margin-top:-6px">Zu „${p.name}“ passen verschiedene Produkte. Wähle aus, was du beobachten willst – Angebote der anderen fallen dann weg.</p>
+    <div class="which-list">${p.name_suggestions.map((s, i) => html`<label class="check"><input type="checkbox" value="${i}" ${i === 0 ? 'checked' : ''}> <span><strong>${s.label}</strong> <span class="muted">· ${s.count} Quelle${s.count === 1 ? '' : 'n'}</span></span></label>`)}</div>
+    <div class="btn-row" style="margin-top:10px"><button class="btn small" id="whichOk">Übernehmen</button><button class="btn small ghost" id="whichAll">Alle passen</button></div>
+  </section>`;
+}
+
+async function answerWhich(p, picked) {
+  const sugg = p.name_suggestions ?? [];
+  const keep = sugg.filter((_, i) => picked.includes(i));
+  const drop = sugg.filter((_, i) => !picked.includes(i)).flatMap((s) => s.listing_ids);
+  const upd = { name_confirmed: true, name_suggestions: null };
+  if (keep.length === 1) upd.name = keep[0].label;          // eindeutige Wahl → deren sauberen Namen übernehmen
+  if (drop.length) {
+    await sb.from('kb_listings').update({ rejected: true }).in('id', drop);
+    await sb.from('kb_offers').update({ gone: true }).in('listing_id', drop);
+    // Neu bewerten lassen (Bestpreis ohne die abgewählten Varianten)
+    upd.analysis_status = 'queued'; upd.analysis_due_at = new Date().toISOString();
+  }
+  const { error } = await sb.from('kb_products').update(upd).eq('id', p.id);
+  if (error) return toast(error.message);
+  if (drop.length) await sb.rpc('kb_request_check', { p_product: p.id });
+  toast(drop.length ? 'Danke – die anderen Varianten werden nicht mehr beobachtet' : 'Danke');
+  route();
 }
 
 /** Mengen-Produkte: günstigster Einkauf je Händler für die benötigte Stückzahl (beliebige Packungsgrößen kombiniert) */
