@@ -9,6 +9,8 @@ import { IMPORT_MARKET } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
 import { packSize } from '../util/pack.ts';
 
+const BUNDLE = /starter[\s-]*(?:set|kit|paket)|\bbridge\b|\+\s*(?:\d+\s*x\s*)?(?:dimmschalter|schalter|sensor|kontaktsensor|bewegungsmelder|fernbedienung|smart button|tap dial)|\bbundle\b/i;
+
 export async function runDeals(deadline: number, opts: { productId?: string; portals?: string[] } = {}) {
   const sql = await db();
   // In der heißen Phase (Black Week, Singles Day) Deal-Portale alle 15 statt 50 Minuten abfragen
@@ -37,7 +39,10 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
         const pack = packSize(d.title) ?? 1;
         // Mengen-Produkte: Deal-Preis pro Stück vergleichen (Schwellen und Bestpreis gelten dann pro Stück)
         const cmp: number | null = d.price ? (multi ? Math.round(d.price / pack * 100) / 100 : d.price) : null;
-        const notes = d.foreign ? `Händler in ${ad.country} – Lieferung nach DE prüfen` : importWare ? 'Marktplatz/Import – Garantie und Länderversion prüfen' : null;
+        // Sets mit Zubehör (Starter-Set mit Bridge, „+ Dimmschalter“ …) sind kein Preis für das Produkt allein
+        const bundle = BUNDLE.test(d.title) && !BUNDLE.test(p.name);
+        const notes = d.foreign ? `Händler in ${ad.country} – Lieferung nach DE prüfen` : importWare ? 'Marktplatz/Import – Garantie und Länderversion prüfen'
+          : bundle ? 'Set mit Zubehör – nicht mit dem Einzelpreis vergleichbar' : null;
         const r = await sql`
           insert into kb_deals (product_id, user_id, portal, external_id, title, url, merchant, price, next_best_price, temperature,
                                 comment_count, posted_at, expired, voucher_code, match_score, notes, pack_size)
@@ -57,7 +62,7 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
         }
         // Melden: neu, aktiv, jünger als 3 Tage, Lieferung nach DE möglich, und Preis interessant
         const fresh = d.postedAt && Date.now() - new Date(d.postedAt).getTime() < 3 * 86400_000;
-        if (isNew && fresh && !d.expired && !d.foreign) {
+        if (isNew && fresh && !d.expired && !d.foreign && !bundle) {
           // Höchstpreis gilt für die ganze Menge → pro Stück umrechnen
           const maxUnit = p.max_price ? (multi ? p.max_price / p.quantity : p.max_price) : null;
           const ref = Math.max(p.threshold_good ?? 0, maxUnit ?? 0) || p.best_price;
