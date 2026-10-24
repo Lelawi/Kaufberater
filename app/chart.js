@@ -81,6 +81,10 @@ export function priceChart(series, p, analysisHistory = [], opts = {}) {
   // Einzelne Tage ohne Nachbarn (z. B. erst seit heute beobachtet) als Punkt zeigen – eine Linie braucht zwei Tage
   const lone = (key) => pts.filter((x, i) => x[key] !== null && (pts[i - 1]?.[key] ?? null) === null && (pts[i + 1]?.[key] ?? null) === null)
     .map((x) => `<circle cx="${X(x.d)}" cy="${Y(x[key])}" r="3.5" fill="${key === 'n' ? 'var(--s-new)' : 'var(--s-refurb)'}"><title>${esc(`${fmtDate(x.d)}: ${fmtEur(x[key])}`)}</title></circle>`).join('');
+  // Aktueller Preis immer sichtbar: Punkt am letzten Tag mit Betrag (auch wenn die Linie erst wenige Tage lang ist)
+  const last = [...pts].reverse().find((x) => x.n !== null);
+  const lastMark = last ? `<circle cx="${X(last.d)}" cy="${Y(last.n)}" r="4.5" fill="var(--s-new)" stroke="var(--surface)" stroke-width="2"/>
+    <text x="${X(last.d) - 8}" y="${Y(last.n) - 9}" text-anchor="end" style="font:700 12px var(--font-num);fill:var(--s-new);paint-order:stroke;stroke:var(--surface);stroke-width:3px">${esc(last.n < 100 ? fmtEur(last.n) : fmtEur0(last.n))}</text>` : '';
   const deals = pts.filter((x) => x.deal).map((x) => `<circle cx="${X(x.d)}" cy="${Y(x.deal)}" r="4.5" fill="var(--s-deal)" stroke="var(--surface)" stroke-width="2"><title>${esc(`Deal ${fmtDate(x.d)}: ${fmtEur(x.deal)}`)}</title></circle>`).join('');
   const histDots = hist.map((h) => `<rect x="${X(h.d) - 4}" y="${Y(h.v) - 4}" width="8" height="8" rx="1.5" fill="none" stroke="var(--ink-3)" stroke-width="1.8"><title>${esc(`${fmtDate(h.d)}: ${fmtEur(h.v)} ${h.note}`)}</title></rect>`).join('');
   const hasRefurb = pts.some((x) => x.r !== null);
@@ -89,7 +93,7 @@ export function priceChart(series, p, analysisHistory = [], opts = {}) {
     <g class="grid">${grid}</g><g class="axis">${ylab}${months}</g>${thr}
     <path d="${path('n')}" fill="none" stroke="var(--s-new)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     ${hasRefurb ? `<path d="${path('r')}" fill="none" stroke="var(--s-refurb)" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round"/>` : ''}
-    ${lone('n')}${hasRefurb ? lone('r') : ''}${histDots}${deals}
+    ${lone('n')}${hasRefurb ? lone('r') : ''}${histDots}${deals}${lastMark}
     <g class="hover" style="display:none"><line y1="${T}" y2="${H - B}" stroke="var(--ink-3)" stroke-width="1"/><circle r="4" fill="var(--s-new)" stroke="var(--surface)" stroke-width="2"/></g>
     <rect class="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
   </svg><div class="chart-tip muted" style="min-height:1.4em;font-size:14px"></div>
