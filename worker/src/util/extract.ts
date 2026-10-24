@@ -76,7 +76,9 @@ export function conditionFrom(v: any): ProductInfo['condition'] | undefined {
 export function availabilityFrom(v: any): boolean | null {
   const s = String(v ?? '').toLowerCase();
   if (!s) return null;
-  if (/instock|limitedavailability|onlineonly|instoreonly|presale|preorder|backorder/.test(s)) {
+  // Nur im Laden (z. B. OBI „Reservieren & im Markt abholen“) zählt nicht als online kaufbar
+  if (/instoreonly/.test(s)) return false;
+  if (/instock|limitedavailability|onlineonly|presale|preorder|backorder/.test(s)) {
     return !/backorder|preorder|presale/.test(s) ? true : true;
   }
   if (/outofstock|soldout|discontinued/.test(s)) return false;

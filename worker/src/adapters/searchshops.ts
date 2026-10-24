@@ -92,7 +92,7 @@ export function offerNode(html: string, url: string): OfferData | null {
   const title = cleanText(prod?.name ?? loadHtml(html)('h1').first().text());
   return {
     offerKey: 'page', shop: new URL(url).hostname, country: 'DE', condition: conditionFromTitle(title), title, url,
-    price: parsePrice(offer.price)!, inStock: /InStock|LimitedAvailability|PreOrder/i.test(String(offer.availability ?? '')) ? true : /OutOfStock|SoldOut|Discontinued/i.test(String(offer.availability ?? '')) ? false : null,
+    price: parsePrice(offer.price)!, inStock: /InStoreOnly/i.test(String(offer.availability ?? '')) ? false : /InStock|LimitedAvailability|PreOrder/i.test(String(offer.availability ?? '')) ? true : /OutOfStock|SoldOut|Discontinued/i.test(String(offer.availability ?? '')) ? false : null,
   };
 }
 

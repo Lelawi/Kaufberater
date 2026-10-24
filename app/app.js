@@ -350,7 +350,9 @@ async function viewProduct(id) {
   const disputed = allOffers.filter((o) => o.disputed_total != null && Number(o.disputed_total) === Number(o.total));
   const offers = allOffers.filter((o) => !disputed.includes(o));
   const a = analysisR.data?.[0];
-  const newOffers = mergeOffers(offers.filter((o) => o.condition === 'new'));
+  // Nicht online kaufbar (ausverkauft oder nur im Markt) ans Ende – sie zählen auch nicht für den Bestpreis
+  const avail = (list) => [...list.filter((o) => o.in_stock !== false), ...list.filter((o) => o.in_stock === false)];
+  const newOffers = avail(mergeOffers(offers.filter((o) => o.condition === 'new')));
   const refurb = mergeOffers(offers.filter((o) => o.condition !== 'new'));
   const best = offers.find((o) => o.id === p.best_offer_id) ?? newOffers[0];
   const lvl = levelOf(p.best_price, p);
@@ -680,7 +682,7 @@ function offerTable(list, showCondition = false, perPiece = false) {
   const rowHtml = (o, i) => html`<tr class="${i === 0 ? 'best' : ''}">
       <td><a class="shop" href="${safeUrl(o.url)}" target="_blank" rel="noopener">${o.shop}</a>${o.country && o.country !== 'DE' ? html` <span class="muted">(${o.country})</span>` : ''}
         <div class="hint">${o.pack_size > 1 ? html`<strong>${packText(o.pack_size)}</strong> · ` : ''}${showCondition ? html`<strong>${condText[o.condition]}</strong> · ` : ''}${o.delivery_text ?? ''}${showCondition && o.title ? html`<br>${o.title.slice(0, 80)}` : ''}${viaList(o).length ? html`<br>über ${via(o)}` : ''}${MARKET.test(o.shop) ? html`<br><span style="color:var(--warn)">Marktplatz-Händler: Preis gilt oft nur bei einem bestimmten Verkäufer („weitere Angebote“) und ist im Preisvergleich manchmal veraltet</span>` : ''}${shopTrust(o)}</div></td>
-      <td class="r"><span class="num price-cell">${fmtEur(o.effective_total ?? o.total)}</span>
+      <td class="r"${o.in_stock === false ? ' style="opacity:.55"' : ''}><span class="num price-cell">${fmtEur(o.effective_total ?? o.total)}</span>${o.in_stock === false ? html`<div class="hint" style="color:var(--warn)">nicht online verfügbar</div>` : ''}
         <div class="hint">${o.pack_size > 1 ? html`<strong>${fmtEur(unit(o))}/Stück</strong><br>` : ''}${o.effective_notes ? html`${fmtEur(o.total)} abzgl. ${o.effective_notes}` : o.shipping ? html`inkl. ${fmtEur(o.shipping)} Versand` : o.shipping === 0 ? 'versandkostenfrei' : ''}
           <br><button class="linklike" data-dispute="${o.id}" title="Beim Händler steht ein anderer Preis">Preis stimmt nicht?</button></div></td>
     </tr>`;
