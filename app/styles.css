@@ -284,3 +284,6 @@ details.more > summary { cursor: pointer; color: var(--ink-2); font-weight: 500;
 
 /* Unauffälliger Text-Knopf (z. B. „Preis stimmt nicht?“) */
 .linklike { background: none; border: 0; padding: 0; font: inherit; font-size: 12px; color: var(--ink-3); text-decoration: underline; cursor: pointer; }
+
+/* App-interne Links: kein Link-Vorschaufenster beim langen Drücken (iPhone zeigt sonst die Adresse der App auf GitHub Pages) */
+a[href^="#"] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
