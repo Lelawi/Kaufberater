@@ -14,6 +14,13 @@ cp -r "$IOS"/. "$DST/ios/"
 cp "$IOS/ci/ios.yml" "$DST/.github/workflows/ios.yml"
 # Neue Version → Service Worker lädt Dateien frisch
 sed -i "s/const CACHE = 'kb-v[0-9a-z]*';/const CACHE = 'kb-$VERSION';/" "$DST/sw.js"
+# Versionsnummer an alle eigenen Dateien hängen, damit iPhone-App und Browser nach jedem Deploy sofort die neuen
+# Dateien laden statt alter Kopien aus dem Zwischenspeicher (GitHub Pages erlaubt bis zu 10 Min. Caching)
+sed -i -E "s#(href|src)=\"(styles\.css|app\.js|vendor/supabase\.js)\"#\1=\"\2?v=$VERSION\"#g" "$DST/index.html"
+for f in "$DST"/*.js; do
+  [ "$(basename "$f")" = sw.js ] && continue
+  sed -i -E "s#(from|import\() *'\./([a-z0-9_-]+)\.js'#\1 './\2.js?v=$VERSION'#g" "$f"
+done
 touch "$DST/.nojekyll"
 cat > "$DST/README.md" <<'MD'
 # Kaufberater – App
