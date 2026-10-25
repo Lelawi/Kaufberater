@@ -122,7 +122,7 @@ function viewLogin(mode = 'login') {
 async function viewList() {
   loading();
   const { data: products, error } = await sb.from('kb_products')
-    .select('id,name,brand,model,status,window_start,window_end,window_type,threshold_good,threshold_top,threshold_instant,max_price,best_price,best_refurb_price,lowest_seen,last_checked_at,discovery_status,analysis_status,bought_price,bought_at,return_until,include_refurb,created_at,quantity,best_basket,image_url,name_suggestions,name_confirmed')
+    .select('id,name,brand,model,status,window_start,window_end,window_type,threshold_good,threshold_top,threshold_instant,max_price,best_price,best_refurb_price,lowest_seen,last_checked_at,discovery_status,analysis_status,bought_price,bought_at,return_until,include_refurb,created_at,quantity,best_basket,image_url,name_suggestions,name_confirmed,price_trend,price_trend_pct')
     .order('created_at', { ascending: false });
   if (error) throw error;
   // Preisentwicklung der letzten Woche
@@ -205,6 +205,7 @@ function row(p) {
   if (p.best_refurb_price && p.include_refurb && p.status === 'watching') meta.push(`Refurbished ab ${fmtEur0(p.best_refurb_price)}`);
   if (p.name_suggestions?.length && !p.name_confirmed && p.status === 'watching') meta.unshift('Welches Produkt genau? Bitte bestätigen');
   if (p.quantity > 1 && p.status === 'watching') meta.unshift(p.best_basket ? `${p.quantity} Stück: ${fmtEur0(p.best_basket.effective ?? p.best_basket.total)}` : `${p.quantity} Stück`);
+  if (p.price_trend === 'rising' && p.status === 'watching') meta.unshift('↗ Preise steigen – Warten lohnt eher nicht');
   if (p.trend7 && Math.abs(p.trend7) >= 1 && p.status === 'watching') meta.unshift(p.trend7 < 0 ? `↓ ${fmtEur0(-p.trend7)} in 7 Tagen` : `↑ ${fmtEur0(p.trend7)} in 7 Tagen`);
   const price = p.status === 'bought' ? p.bought_price : p.best_price;
   return html`<a class="row" href="#/p/${p.id}">
@@ -376,6 +377,7 @@ async function viewProduct(id) {
     <div>${!isBought && lvl ? html`<span class="pill ${lvl}">${LEVEL_TEXT[lvl]}</span>` : ''}</div>
   </section>
   ${!isBought ? raw(ladder(p, p.best_price)) : ''}
+  ${!isBought && p.price_trend ? html`<p class="hint" style="margin-top:6px;${p.price_trend === 'rising' ? 'color:var(--warn);font-weight:600' : ''}">${trendText(p)}</p>` : ''}
   <p class="hint" style="margin-top:6px">Zuletzt geprüft ${ago(p.last_checked_at)}${p.lowest_seen ? html` · Tiefstpreis seit Beobachtung ${fmtEur(p.lowest_seen)} (${fmtDate(p.lowest_seen_at)})` : ''}</p>
 
   ${a ? html`<section class="panel">
@@ -543,6 +545,14 @@ async function viewProduct(id) {
     const { error } = await sb.rpc('kb_add_listing', { p_product: id, p_url: document.getElementById('lurl').value.trim() });
     toast(error ? error.message : 'Link wird ab dem nächsten Durchlauf überwacht'); if (!error) route();
   });
+}
+
+/** Preistendenz der letzten Monate in Worten */
+function trendText(p) {
+  const pct = Math.abs(Number(p.price_trend_pct ?? 0)).toLocaleString('de-DE', { maximumFractionDigits: 0 });
+  if (p.price_trend === 'rising') return `Tendenz steigend: Die Preise liegen ${pct} % über denen vor 3–6 Monaten. Warten lohnt sich hier eher nicht – ein Preis unter „gut“ ist schon ein guter Moment.`;
+  if (p.price_trend === 'falling') return `Tendenz fallend: Die Preise liegen ${pct} % unter denen vor 3–6 Monaten.`;
+  return 'Tendenz: seit Monaten etwa gleich.';
 }
 
 /** Rückfrage: Welches Produkt ist gemeint? (mehrere Varianten passen zum eingetippten Namen) */

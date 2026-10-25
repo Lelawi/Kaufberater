@@ -39,3 +39,13 @@ test('Saubere Namen und Rückfrage bei Varianten', () => {
   // Gleiches Produkt in verschiedenen Packungen → keine Rückfrage
   assert.equal(variantSuggestions('Philips hue gu10 white ambiance', [{ id: 'a', title: 'Philips Hue White Ambiance GU10 3er-Pack' }, { id: 'b', title: 'Philips Hue White Ambiance GU10 18er-Pack' }]).length, 1);
 });
+
+import { computeTrend } from '../src/jobs/trend.ts';
+test('Preistendenz', () => {
+  const today = new Date('2026-10-25T12:00:00Z');
+  const days = (n: number, f: (i: number) => number) => Array.from({ length: n }, (_, i) => ({ day: new Date(Number(today) - (n - 1 - i) * 864e5).toISOString().slice(0, 10), price: f(i) }));
+  assert.equal(computeTrend(days(180, (i) => (i < 100 ? 1999 : 2199)), today)?.trend, 'rising');
+  assert.equal(computeTrend(days(180, (i) => (i < 100 ? 2199 : 1999)), today)?.trend, 'falling');
+  assert.equal(computeTrend(days(180, (i) => 2000 + (i % 7) * 10), today)?.trend, 'stable');
+  assert.equal(computeTrend(days(40, () => 100), today), null);   // zu kurz
+});

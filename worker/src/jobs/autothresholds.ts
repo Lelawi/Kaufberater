@@ -16,7 +16,12 @@ function quantile(xs: number[], q: number): number {
   return s[lo] + (s[hi] - s[lo]) * (i - lo);
 }
 
-export function computeThresholds(best: number, historyMin: number | null, dealPrices: number[]) {
+export function computeThresholds(best: number, historyMin: number | null, dealPrices: number[], trend: string | null = null) {
+  // Preise steigen seit Monaten (z. B. wiederholte Preiserhöhungen): Warten lohnt meist nicht –
+  // „gut“ ist dann schon der aktuelle Preis, die anderen Schwellen nur knapp darunter
+  if (trend === 'rising') {
+    return { good: roundNice(best), top: roundNice(best * 0.96), instant: roundNice(best * 0.92), basis: 'dem aktuellen Preis (die Preise steigen seit Monaten – Warten lohnt eher nicht)' };
+  }
   const deals = dealPrices.filter((p) => p > best * 0.5 && p < best * 1.3); // Ausreißer (Zubehör, Bundles) weg
   let good: number; let top: number; let instant: number; let basis: string;
   if (deals.length >= 3) {
@@ -46,7 +51,7 @@ export function computeThresholds(best: number, historyMin: number | null, dealP
 export async function runAutoThresholds(opts: { productId?: string } = {}) {
   const sql = await db();
   const products = await sql`
-    select id, user_id, name, best_price, lowest_seen, quantity from kb_products
+    select id, user_id, name, best_price, lowest_seen, quantity, price_trend from kb_products
     where status = 'watching' and not thresholds_manual and best_price is not null
       and (threshold_good is null or threshold_source = 'auto')
       and (${opts.productId ?? null}::uuid is null or id = ${opts.productId ?? null}::uuid)`;
@@ -64,7 +69,7 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
                             where product_id = ${p.id} and series like 'hist:%' and observed_at > now() - interval '200 days' group by 1) d`;
     const histLow = h?.n >= 20 && h.low ? Number(h.low) : null;
     const seen = [p.lowest_seen ? Number(p.lowest_seen) : null, histLow].filter((x): x is number => x != null);
-    const t = computeThresholds(Number(p.best_price), seen.length ? Math.min(...seen) : null, deals.map((d) => Number(d.price)));
+    const t = computeThresholds(Number(p.best_price), seen.length ? Math.min(...seen) : null, deals.map((d) => Number(d.price)), p.price_trend);
     const upd = await sql`update kb_products set threshold_good = ${t.good}, threshold_top = ${t.top}, threshold_instant = ${t.instant}, threshold_source = 'auto'
               where id = ${p.id} and not thresholds_manual and (threshold_good is null or threshold_source = 'auto')
                 and (threshold_good, threshold_top, threshold_instant) is distinct from (${t.good}::numeric, ${t.top}::numeric, ${t.instant}::numeric)
