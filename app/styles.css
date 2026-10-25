@@ -171,8 +171,10 @@ details.more > summary { cursor: pointer; color: var(--ink-2); font-weight: 500;
 .ladder .dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--surface); border: 2.5px solid var(--ink); box-sizing: border-box; }
 .ladder .lad-labels { position: relative; height: 18px; }
 .ladder .lad-labels.rows2 { height: 32px; }
+.ladder .lad-labels.rows3 { height: 46px; }
 .ladder .lab { position: absolute; top: 5px; white-space: nowrap; color: var(--ink-3); }
 .ladder .lab.r2 { top: 19px; }
+.ladder .lab.r3 { top: 33px; }
 .ladder .lab b { font-weight: 600; }
 .ladder .lab.instant b { color: #A88700; }
 .ladder .lab.top b { color: var(--top); }

@@ -27,14 +27,24 @@ export function ladder(p, price) {
   }
   segs.push(`<i class="seg wait" style="left:${pct(prev)}%;width:${100 - pct(prev)}%"></i>`);
   const place = (v) => { const x = pct(v); return `left:${x}%;transform:translateX(${x < 10 ? '0' : x > 90 ? '-100%' : '-50%'})`; };
-  // Schwellen-Beschriftung unter dem Strich; liegen zwei zu dicht beieinander, kommt die zweite eine Zeile tiefer
+  // Schwellen-Beschriftung unter dem Strich: Breite jeder Beschriftung grob schätzen (Pixel) und sie auf die
+  // erste Zeile legen, in der sie keine andere berührt – so überlappt nichts, auch wenn Schwellen dicht beieinander liegen
   const marks = [[ti, 'instant', 'sofort'], [tt, 'top', 'top'], [tg, 'good', 'gut']].filter(([v]) => v).sort((a, b) => a[0] - b[0]);
-  let lastRow1 = -100; let rows = 1;
+  const W = Math.max(240, (document.getElementById('view')?.clientWidth ?? 360) - 40);
+  const rowEnd = []; // rechtes Ende der letzten Beschriftung je Zeile (px)
   const labels = marks.map(([v, cls, word]) => {
-    const x = pct(v); let row = 1;
-    if (x - lastRow1 < 22) { row = 2; rows = 2; } else lastRow1 = x;
-    return `<span class="lab ${cls} r${row}" style="${place(v)}" title="${word}"><b>${word}</b> ${esc(money(v))}</span>`;
+    const text = `${word} ${money(v)}`;
+    const w = text.length * 6.6 + 4;
+    const x = (pct(v) / 100) * W;
+    const align = x - w / 2 < 0 ? 'left' : x + w / 2 > W ? 'right' : 'center';
+    const start = align === 'left' ? x : align === 'right' ? x - w : x - w / 2;
+    let row = rowEnd.findIndex((end) => start >= end + 8);
+    if (row < 0) { row = rowEnd.length; rowEnd.push(0); }
+    rowEnd[row] = start + w;
+    const tf = align === 'left' ? '0' : align === 'right' ? '-100%' : '-50%';
+    return `<span class="lab ${cls} r${row + 1}" style="left:${pct(v)}%;transform:translateX(${tf})" title="${word}"><b>${word}</b> ${esc(money(v))}</span>`;
   }).join('');
+  const rows = Math.max(1, rowEnd.length);
   const ticks = marks.map(([v, cls]) => `<i class="tick ${cls}" style="left:${pct(v)}%"></i>`).join('');
   const low = p.lowest_seen ? `<i class="low" style="left:${pct(Number(p.lowest_seen))}%" title="Tiefstpreis seit Beobachtung"></i>` : '';
   return `<div class="ladder" role="img" aria-label="${esc(`Aktueller Preis ${fmtEur(price)}; Schwellen: sofort ${fmtEur(ti)}, top ${fmtEur(tt)}, gut ${fmtEur(tg)}`)}">
