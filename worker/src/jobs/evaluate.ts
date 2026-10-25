@@ -210,7 +210,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       if (Date.now() >= d0 - 12 * 3600_000 && Date.now() <= d0 + 4 * 86400_000) {
         const lvl = levels.find(([, t]) => t !== null && best.eff <= t!)?.[0];
         stats.alerts += await createAlert({
-          userId: p.user_id, productId: p.id, kind: 'analysis', level: lvl === 'instant' || lvl === 'top' ? 'top' : 'info',
+          userId: p.user_id, productId: p.id, kind: 'analysis', level: lvl === 'instant' || lvl === 'top' ? 'top' : lvl === 'good' ? 'good' : 'info',
           title: `Jetzt ist der empfohlene Kaufzeitraum: ${p.name}`,
           body: `${rec.best_buy_window ?? ''}. Aktuell bester Preis: ${fmtEur(best.eff)}${perPiece} bei ${best.o.shop}${multi ? ` (${quantity} Stück: ${fmtEur(best.sum)})` : ''}` +
             (lvl && lvl !== 'wait' ? ` – das ist ein ${LEVEL_LABEL[lvl] ?? 'guter Preis'}.` : `. Die Schwellen sind noch nicht erreicht; schau dir die Angebote trotzdem an.`),

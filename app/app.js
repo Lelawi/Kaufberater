@@ -833,9 +833,20 @@ async function viewSettings() {
       : pushState === 'unsupported' ? html`<p class="muted">Dieser Browser unterstützt keine Push-Nachrichten.</p>`
       : pushState === 'on' ? html`<p>Auf diesem Gerät eingeschaltet.</p><div class="btn-row"><button class="btn small ghost" id="pushTest">Testnachricht anfordern</button><button class="btn small ghost" id="pushOff">Ausschalten</button></div>`
       : pushState === 'denied' ? html`<p>Mitteilungen sind für diese App blockiert. Erlaube sie in den Systemeinstellungen (iPhone: Einstellungen → Mitteilungen → Kaufberater).</p>`
-      : html`<p>Erhalte eine Nachricht, sobald ein Preis eine Schwelle erreicht.</p><button class="btn" id="pushOn">Push-Nachrichten einschalten</button>`}
+      : html`<p>Erhalte eine Nachricht, sobald ein Preis eine Schwelle erreicht – sonst nichts.</p><button class="btn" id="pushOn">Push-Nachrichten einschalten</button>`}
   </section>
   <form id="sf" class="panel"><h2>Benachrichtigungen</h2>
+    <p class="hint" style="margin-top:-6px">Push-Nachrichten kommen nur für Kaufsignale. Alle anderen Meldungen (Analysen, Wochenüberblick …) findest du weiterhin unter „Meldungen“.</p>
+    <div class="field"><label for="nl">Melde mich bei Preisen ab</label>
+      <select id="nl">
+        <option value="good" ${(s.notify_min_level ?? 'good') === 'good' ? 'selected' : ''}>„Gut“ – Schwelle „gut“ erreicht</option>
+        <option value="top" ${s.notify_min_level === 'top' ? 'selected' : ''}>„Sehr gut“ – z. B. Black-Friday-Niveau</option>
+        <option value="instant" ${s.notify_min_level === 'instant' ? 'selected' : ''}>Nur „Sofort zuschlagen“ (Tiefstpreis)</option>
+      </select>
+      <p class="hint">Gilt für Preise, Deals und „Jetzt kaufen“-Empfehlungen. Immer gemeldet: dein Wunschpreis, Preisschutz nach dem Kauf, ablaufendes Zeitfenster.</p></div>
+    <div class="field"><label class="check"><input id="nq" type="checkbox" ${s.notify_quick_check !== false ? 'checked' : ''}> Ergebnis meiner Schnellchecks („Ist das ein Deal?“)</label></div>
+    <div class="field"><label class="check"><input id="ni" type="checkbox" ${s.notify_important ? 'checked' : ''}> Wichtige Hinweise (Nachfolger angekündigt, Quelle gestört)</label></div>
+    <div class="field"><label class="check"><input id="nf" type="checkbox" ${s.notify_info ? 'checked' : ''}> Alles andere (neue Analysen, Wochenüberblick, Bündel-Tipps)</label></div>
     ${setup?.email_ready ? html`<div class="field"><label class="check"><input id="em" type="checkbox" ${s.email_alerts ? 'checked' : ''}> Wichtige Meldungen (Top-Preis, Sofort zuschlagen, Fristen) zusätzlich per E-Mail</label></div>
     <div class="field"><label for="ea">E-Mail-Adresse</label><input id="ea" type="email" value="${s.alert_email ?? session.user.email ?? ''}"></div>`
       : html`<input id="em" type="checkbox" hidden><input id="ea" type="hidden" value="${s.alert_email ?? ''}">`}
@@ -906,7 +917,9 @@ async function viewSettings() {
   document.getElementById('sf').addEventListener('submit', async (e) => {
     e.preventDefault();
     const row = { user_id: session.user.id, email_alerts: document.getElementById('em').checked, alert_email: document.getElementById('ea').value || null,
-      quiet_from: document.getElementById('qf').value || null, quiet_to: document.getElementById('qt').value || null };
+      quiet_from: document.getElementById('qf').value || null, quiet_to: document.getElementById('qt').value || null,
+      notify_min_level: document.getElementById('nl').value, notify_quick_check: document.getElementById('nq').checked,
+      notify_important: document.getElementById('ni').checked, notify_info: document.getElementById('nf').checked };
     const { error } = await sb.from('kb_settings').upsert(row);
     toast(error ? error.message : 'Gespeichert');
   });

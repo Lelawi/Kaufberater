@@ -69,7 +69,9 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
           const interesting = !cmp || !ref || cmp <= ref * 1.02;
           if (interesting) {
             const level = cmp && ((p.threshold_instant && cmp <= p.threshold_instant) || (maxUnit && cmp <= maxUnit)) ? 'instant'
-              : cmp && p.threshold_top && cmp <= p.threshold_top ? 'top' : 'good';
+              : cmp && p.threshold_top && cmp <= p.threshold_top ? 'top'
+              // „gut“ nur, wenn die Schwelle wirklich erreicht ist – sonst nur Info (keine Push-Nachricht)
+              : cmp && p.threshold_good && cmp <= p.threshold_good ? 'good' : 'info';
             stats.alerts += await createAlert({
               userId: p.user_id, productId: p.id, kind: 'deal', level,
               title: `${ad.label}-Deal: ${p.name}${d.price ? ' für ' + fmtEur(d.price) : ''}${multi && pack > 1 && cmp ? ` (${pack} Stück, ${fmtEur(cmp)}/Stück)` : ''}`,

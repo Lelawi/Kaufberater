@@ -19,6 +19,7 @@ Ablauf eines Worker-Durchlaufs (`worker/src/run.ts`):
 4. **Bewerten** (`jobs/evaluate.ts`): Endpreis nach eigenen Gutscheinen/Cashback, Schwellen prüfen, Preisschutz nach dem Kauf, Fristen, Fake-Rabatte, Bündeln.
 5. **Vorläufige Schwellen** (`jobs/autothresholds.ts`): sofort aus Bestpreis + früheren Deals, bis die Tiefenanalyse übernimmt.
 6. **Zustellen** (`jobs/alerts.ts`): Web-Push (und optional E-Mail).
+   Push/E-Mail nur für Kaufsignale (`util/notify.ts`, Einstellungen `kb_settings.notify_*`): Preise/Deals/„Jetzt kaufen“ ab gewählter Stufe (Standard „gut“), immer Wunschpreis, Preisschutz, Zeitfenster-Ende und Testnachricht; Schnellcheck-Ergebnisse, Hinweise und Infos sind abschaltbar. In der App-Meldungsliste steht weiterhin alles.
 
 ## Preisverlauf
 - Eigene Abfragen: je Angebot ein Stützpunkt pro Kalendertag und bei jeder Preisänderung (`series='offer'`).

@@ -2,6 +2,7 @@
 import webpush from 'web-push';
 import { db, workerConfig } from '../db.ts';
 import { apnsReady, sendApns, closeApns } from '../util/apns.ts';
+import { shouldNotify, prefsFromSettings } from '../util/notify.ts';
 
 export interface NewAlert {
   userId: string;
@@ -49,7 +50,7 @@ const APP_URL = 'https://lelawi.github.io/Kaufberater-app/';
 export async function deliverAlerts() {
   const sql = await db();
   const pending = await sql`
-    select a.*, s.push_alerts, s.email_alerts, s.alert_email, s.quiet_from::text as quiet_from, s.quiet_to::text as quiet_to,
+    select a.*, s.push_alerts, s.email_alerts, s.notify_min_level, s.notify_quick_check, s.notify_important, s.notify_info, s.alert_email, s.quiet_from::text as quiet_from, s.quiet_to::text as quiet_to,
            kb_user_email(a.user_id) as user_email
     from kb_alerts a
     left join kb_settings s on s.user_id = a.user_id
@@ -61,7 +62,13 @@ export async function deliverAlerts() {
   const apnsOk = await apnsReady();
   const mailer = await getMailer();
   let apnsKeyError: string | null = null;
+  const stats2 = { skipped: 0 };
   for (const a of pending) {
+    // Nur Kaufsignale (bzw. was in den Einstellungen gewählt ist) als Push/E-Mail – in der App steht trotzdem alles
+    if (!shouldNotify(a as any, prefsFromSettings(a))) {
+      await sql`update kb_alerts set push_sent_at = now() where id = ${a.id}`;
+      stats2.skipped++; continue;
+    }
     const quiet = a.level !== 'instant' && inQuietHours(a.quiet_from, a.quiet_to);
     if (quiet) continue;
     let sent = false;
@@ -113,6 +120,7 @@ export async function deliverAlerts() {
     void sent;
   }
   closeApns();
+  (stats as any).skipped = stats2.skipped;
   if (apnsKeyError) {
     const day = new Date().toISOString().slice(0, 10);
     for (const u of new Set(pending.map((a) => a.user_id as string))) {
