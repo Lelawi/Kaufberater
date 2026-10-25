@@ -55,6 +55,7 @@ async function route() {
     else if (a === 'p') { setTab('list'); await viewProduct(b); }
     else if (a === 'check') { setTab('check'); await viewCheck(params); }
     else if (a === 'alerts') { setTab('alerts'); await viewAlerts(); }
+    else if (a === 'w') { setTab('alerts'); await viewDigest(b); }
     else if (a === 'settings') { setTab('settings'); await viewSettings(); }
     else location.hash = '#/';
   } catch (e) {
@@ -799,7 +800,7 @@ async function viewAlerts() {
   const { data } = await sb.from('kb_alerts').select('*').order('created_at', { ascending: false }).limit(100);
   if (!data?.length) return render(html`<div class="head"><h1>Meldungen</h1></div><div class="empty panel"><h2>Noch keine Meldungen</h2><p>Sobald ein Preis eine deiner Schwellen erreicht oder ein passender Deal auftaucht, steht es hier – und kommt als Push-Nachricht, wenn du sie in den Einstellungen einschaltest.</p><a class="btn ghost" href="#/settings">Zu den Einstellungen</a></div>`);
   render(html`<div class="head"><h1>Meldungen</h1><button class="btn small ghost" id="allRead">Alle gelesen</button></div>
-    <div class="rows">${data.map((a) => html`<a class="alert-row ${a.level} ${a.read_at ? 'read' : ''}" href="${a.product_id ? '#/p/' + a.product_id : a.url ? safeUrl(a.url) : '#/alerts'}" ${!a.product_id && a.url ? raw('target="_blank" rel="noopener"') : ''} data-id="${a.id}">
+    <div class="rows">${data.map((a) => html`<a class="alert-row ${a.level} ${a.read_at ? 'read' : ''}" href="${a.kind === 'digest' ? '#/w/' + a.id : a.product_id ? '#/p/' + a.product_id : a.url ? safeUrl(a.url) : '#/alerts'}" ${!a.product_id && a.url && a.kind !== 'digest' ? raw('target="_blank" rel="noopener"') : ''} data-id="${a.id}">
       <span class="dot" aria-hidden="true"></span>
       <div><div class="t">${a.title}</div>${a.body ? html`<div class="b">${a.body}</div>` : ''}<div class="w">${ago(a.created_at)}</div></div></a>`)}</div>`);
   document.getElementById('allRead').onclick = async () => {
@@ -809,6 +810,37 @@ async function viewAlerts() {
   view.querySelectorAll('.alert-row').forEach((el) => el.addEventListener('click', () => {
     sb.from('kb_alerts').update({ read_at: new Date().toISOString() }).eq('id', el.dataset.id).is('read_at', null).then(refreshBadge);
   }));
+}
+
+// ---------- Wochenüberblick ----------
+async function viewDigest(id) {
+  loading();
+  const { data: a, error } = await sb.from('kb_alerts').select('*').eq('id', id).single();
+  if (error) throw error;
+  if (!a.read_at) sb.from('kb_alerts').update({ read_at: new Date().toISOString() }).eq('id', id).then(refreshBadge);
+  const items = a.data?.items ?? [];
+  const ev = a.data?.event;
+  const money = (v) => (v < 100 ? fmtEur(v) : fmtEur0(v));
+  const row = (i) => html`<a class="row" href="#/p/${i.id}">
+      ${raw(i.image ? html`<img class="thumb" src="${safeUrl(i.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-letter="${(i.name.trim()[0] ?? '•').toUpperCase()}">` : html`<span class="thumb ph">${(i.name.trim()[0] ?? '•').toUpperCase()}</span>`)}
+      <div class="name">${i.name}</div>
+      <div class="price"><span class="price-mid">${money(i.price)}</span>
+        <div class="price-sub">${i.quantity > 1 ? 'pro Stück ' : ''}${i.level && i.level !== 'wait' ? html`<span class="pill ${i.level}">${LEVEL_TEXT[i.level]}</span>` : ''}</div></div>
+      <div class="meta">${i.diff == null ? 'neu beobachtet' : Math.abs(i.diff) < 0.5 ? 'unverändert'
+        : html`<span style="color:${i.diff < 0 ? 'var(--good)' : 'var(--warn)'};font-weight:600">${i.diff < 0 ? '↓' : '↑'} ${money(Math.abs(i.diff))}</span> zur Vorwoche`}${i.gap != null && i.gap > 0 ? ` · noch ${money(i.gap)} bis „gut“` : ''}</div>
+    </a>`;
+  const groups = [
+    ['Kaufpreis erreicht', items.filter((i) => i.level && i.level !== 'wait')],
+    ['Günstiger geworden', items.filter((i) => !(i.level && i.level !== 'wait') && (i.diff ?? 0) <= -0.5)],
+    ['Teurer geworden', items.filter((i) => !(i.level && i.level !== 'wait') && (i.diff ?? 0) >= 0.5)],
+    ['Unverändert', items.filter((i) => !(i.level && i.level !== 'wait') && Math.abs(i.diff ?? 0) < 0.5)],
+  ].filter(([, l]) => l.length);
+  render(html`<a class="back" href="#/alerts">Meldungen</a>
+    <div class="head"><h1>Wochenüberblick</h1></div>
+    <p class="hint" style="margin-top:-8px">${fmtDate(a.created_at, { weekday: 'long', day: 'numeric', month: 'long' })} · Preise im Vergleich zur Vorwoche</p>
+    ${ev ? html`<div class="panel flat" style="margin:12px 0"><strong>${ev.name}</strong> in ${ev.days} Tagen${ev.date ? ` (${fmtDate(ev.date, { day: 'numeric', month: 'long' })})` : ''} – oft der günstigste Zeitpunkt im Jahr.</div>` : ''}
+    ${items.length ? groups.map(([t, l]) => html`<h2 style="margin:18px 0 8px">${t} <span class="muted" style="font-weight:400">${l.length}</span></h2><div class="rows">${l.map(row)}</div>`)
+      : html`<div class="panel"><p>${a.body ?? ''}</p></div>`}`);
 }
 
 // ---------- Einstellungen ----------

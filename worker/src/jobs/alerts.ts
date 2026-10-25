@@ -7,20 +7,22 @@ import { shouldNotify, prefsFromSettings } from '../util/notify.ts';
 export interface NewAlert {
   userId: string;
   productId: string | null;
-  kind: 'threshold' | 'deal' | 'price_protection' | 'successor' | 'analysis' | 'bundle' | 'quick_check' | 'voucher' | 'system';
+  kind: 'threshold' | 'deal' | 'price_protection' | 'successor' | 'analysis' | 'bundle' | 'quick_check' | 'voucher' | 'system' | 'digest';
   level: 'info' | 'good' | 'top' | 'instant' | 'warning';
   title: string;
   body?: string;
   url?: string | null;
   dedupKey: string;
+  data?: Record<string, unknown> | null;   // strukturierte Inhalte für die App (z. B. Wochenüberblick)
 }
 
 /** Legt eine Benachrichtigung an (doppelte werden über dedupKey verhindert). Gibt 1 zurück, wenn neu. */
 export async function createAlert(a: NewAlert): Promise<number> {
   const sql = await db();
   const r = await sql`
-    insert into kb_alerts (user_id, product_id, kind, level, title, body, url, dedup_key)
-    values (${a.userId}, ${a.productId}, ${a.kind}, ${a.level}, ${a.title.slice(0, 300)}, ${a.body?.slice(0, 2000) ?? null}, ${a.url ?? null}, ${a.dedupKey})
+    insert into kb_alerts (user_id, product_id, kind, level, title, body, url, dedup_key, data)
+    values (${a.userId}, ${a.productId}, ${a.kind}, ${a.level}, ${a.title.slice(0, 300)}, ${a.body?.slice(0, 2000) ?? null}, ${a.url ?? null}, ${a.dedupKey},
+            ${a.data ? sql.json(a.data as any) : null})
     on conflict (user_id, dedup_key) do nothing
     returning id`;
   return r.length;
@@ -78,7 +80,7 @@ export async function deliverAlerts() {
       const [{ n: unread }] = await sql`select count(*)::int as n from kb_alerts where user_id = ${a.user_id} and read_at is null`;
       for (const d of devices) {
         const r = await sendApns(String(d.endpoint).replace(/^apns:/, ''), {
-          title: a.title, body: a.body ?? '', path: a.product_id ? `#/p/${a.product_id}` : '#/alerts',
+          title: a.title, body: a.body ?? '', path: a.product_id ? `#/p/${a.product_id}` : a.kind === 'digest' ? `#/w/${a.id}` : '#/alerts',
           badge: unread, collapseId: a.dedup_key, urgent: a.level === 'instant',
         });
         if (r.status === 200) { sent = true; stats.push++; await sql`update kb_push_subscriptions set last_ok_at = now(), fail_count = 0 where id = ${d.id}`; }
@@ -94,7 +96,7 @@ export async function deliverAlerts() {
     if (pushOk && a.push_alerts !== false) {
       const subs = await sql`select id, endpoint, p256dh, auth from kb_push_subscriptions where user_id = ${a.user_id} and kind = 'web' and fail_count < 10`;
       const payload = JSON.stringify({
-        title: a.title, body: a.body ?? '', url: a.product_id ? `${APP_URL}#/p/${a.product_id}` : APP_URL, shopUrl: a.url,
+        title: a.title, body: a.body ?? '', url: a.product_id ? `${APP_URL}#/p/${a.product_id}` : a.kind === 'digest' ? `${APP_URL}#/w/${a.id}` : APP_URL, shopUrl: a.url,
         tag: a.dedup_key, level: a.level,
       });
       for (const s of subs) {
