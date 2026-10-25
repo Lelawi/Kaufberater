@@ -169,12 +169,12 @@ details.more > summary { cursor: pointer; color: var(--ink-2); font-weight: 500;
 .ladder .tick { position: absolute; top: -2px; bottom: -4px; width: 1.5px; margin-left: -.75px; background: var(--ink-3); opacity: .55; }
 .ladder .low { position: absolute; top: -4px; bottom: -4px; border-left: 1.5px dashed var(--ink-3); }
 .ladder .dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--surface); border: 2.5px solid var(--ink); box-sizing: border-box; }
-.ladder .lad-labels { position: relative; height: 18px; }
-.ladder .lad-labels.rows2 { height: 32px; }
-.ladder .lad-labels.rows3 { height: 46px; }
-.ladder .lab { position: absolute; top: 5px; white-space: nowrap; color: var(--ink-3); }
-.ladder .lab.r2 { top: 19px; }
-.ladder .lab.r3 { top: 33px; }
+.ladder .lad-legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 8px; }
+.ladder .lab { display: flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--ink-3); min-width: 0; }
+.ladder .lab .sw { flex: none; width: 10px; height: 6px; border-radius: 2px; }
+.ladder .lab.instant .sw { background: var(--tag); }
+.ladder .lab.top .sw { background: var(--top); }
+.ladder .lab.good .sw { background: var(--good); }
 .ladder .lab b { font-weight: 600; }
 .ladder .lab.instant b { color: #A88700; }
 .ladder .lab.top b { color: var(--top); }

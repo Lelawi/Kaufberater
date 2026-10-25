@@ -27,31 +27,17 @@ export function ladder(p, price) {
   }
   segs.push(`<i class="seg wait" style="left:${pct(prev)}%;width:${100 - pct(prev)}%"></i>`);
   const place = (v) => { const x = pct(v); return `left:${x}%;transform:translateX(${x < 10 ? '0' : x > 90 ? '-100%' : '-50%'})`; };
-  // Schwellen-Beschriftung unter dem Strich: Breite jeder Beschriftung grob schätzen (Pixel) und sie auf die
-  // erste Zeile legen, in der sie keine andere berührt – so überlappt nichts, auch wenn Schwellen dicht beieinander liegen
-  const marks = [[ti, 'instant', 'sofort'], [tt, 'top', 'top'], [tg, 'good', 'gut']].filter(([v]) => v).sort((a, b) => a[0] - b[0]);
-  const W = Math.max(240, (document.getElementById('view')?.clientWidth ?? 360) - 40);
-  const rowEnd = []; // rechtes Ende der letzten Beschriftung je Zeile (px)
-  const labels = marks.map(([v, cls, word]) => {
-    const text = `${word} ${money(v)}`;
-    const w = text.length * 6.6 + 4;
-    const x = (pct(v) / 100) * W;
-    // Einheitlich: Beschriftung beginnt an ihrem Strich; nur wenn sie rechts nicht mehr passt, endet sie dort
-    const align = x + w <= W ? 'left' : 'right';
-    const start = align === 'left' ? x : x - w;
-    let row = rowEnd.findIndex((end) => start >= end + 8);
-    if (row < 0) { row = rowEnd.length; rowEnd.push(0); }
-    rowEnd[row] = start + w;
-    const tf = align === 'left' ? '0' : '-100%';
-    return `<span class="lab ${cls} r${row + 1}" style="left:${pct(v)}%;transform:translateX(${tf})" title="${word}"><b>${word}</b> ${esc(money(v))}</span>`;
-  }).join('');
-  const rows = Math.max(1, rowEnd.length);
+  // Schwellen-Legende: feste Reihenfolge wie auf dem Balken (sofort · top · gut), immer eine Zeile, gleiche Spalten
+  // in jeder Karte – Farbfeld = Zone auf dem Balken, Wert = Obergrenze dieser Zone
+  const marks = [[ti, 'instant', 'sofort'], [tt, 'top', 'top'], [tg, 'good', 'gut']].filter(([v]) => v);
+  const labels = marks.map(([v, cls, word]) =>
+    `<span class="lab ${cls}"><i class="sw"></i><b>${word}</b> ≤ ${esc(money(v))}</span>`).join('');
   const ticks = marks.map(([v, cls]) => `<i class="tick ${cls}" style="left:${pct(v)}%"></i>`).join('');
   const low = p.lowest_seen ? `<i class="low" style="left:${pct(Number(p.lowest_seen))}%" title="Tiefstpreis seit Beobachtung"></i>` : '';
   return `<div class="ladder" role="img" aria-label="${esc(`Aktueller Preis ${fmtEur(price)}; Schwellen: sofort ${fmtEur(ti)}, top ${fmtEur(tt)}, gut ${fmtEur(tg)}`)}">
     <div class="lad-cur"><span style="${place(price)}">${esc(money(price))}</span></div>
     <div class="lad-bar">${segs.join('')}${ticks}${low}<i class="dot" style="left:${pct(price)}%"></i></div>
-    <div class="lad-labels rows${rows}">${labels}</div></div>`;
+    <div class="lad-legend">${labels}</div></div>`;
 }
 
 /**
