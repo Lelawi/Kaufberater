@@ -159,9 +159,10 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       const hit = levels.find(([, t]) => t !== null && cand.eff <= (isRefurb ? t! * 0.9 : t!));
       if (!hit) continue;
       const [level] = hit;
-      // nicht erneut melden, wenn in den letzten 24h schon ein gleich guter/besserer Preis gemeldet wurde
+      // nicht erneut melden, wenn in den letzten 7 Tagen schon ein gleich guter/besserer Preis gemeldet wurde
+      // (sonst kommt nach einem Tag dieselbe oder sogar eine schlechtere Meldung noch einmal)
       const recent = await sql`select 1 from kb_alerts where product_id = ${p.id} and kind = 'threshold'
-        and created_at > now() - interval '24 hours'
+        and created_at > now() - interval '7 days'
         and dedup_key like ${`thr:${p.id}:${isRefurb ? 'r' : 'n'}:%`}
         and split_part(dedup_key, ':', 5)::numeric <= ${Math.floor(cand.eff)} limit 1`;
       if (recent.length) continue;
