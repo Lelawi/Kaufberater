@@ -36,12 +36,13 @@ export function ladder(p, price) {
     const text = `${word} ${money(v)}`;
     const w = text.length * 6.6 + 4;
     const x = (pct(v) / 100) * W;
-    const align = x - w / 2 < 0 ? 'left' : x + w / 2 > W ? 'right' : 'center';
-    const start = align === 'left' ? x : align === 'right' ? x - w : x - w / 2;
+    // Einheitlich: Beschriftung beginnt an ihrem Strich; nur wenn sie rechts nicht mehr passt, endet sie dort
+    const align = x + w <= W ? 'left' : 'right';
+    const start = align === 'left' ? x : x - w;
     let row = rowEnd.findIndex((end) => start >= end + 8);
     if (row < 0) { row = rowEnd.length; rowEnd.push(0); }
     rowEnd[row] = start + w;
-    const tf = align === 'left' ? '0' : align === 'right' ? '-100%' : '-50%';
+    const tf = align === 'left' ? '0' : '-100%';
     return `<span class="lab ${cls} r${row + 1}" style="left:${pct(v)}%;transform:translateX(${tf})" title="${word}"><b>${word}</b> ${esc(money(v))}</span>`;
   }).join('');
   const rows = Math.max(1, rowEnd.length);
