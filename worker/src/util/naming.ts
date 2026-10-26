@@ -44,7 +44,17 @@ const VARIANT: Record<string, string> = {
   pro: 'Pro', max: 'Max', plus: 'Plus', ultra: 'Ultra', mini: 'Mini', lite: 'Lite', slim: 'Slim', xl: 'XL', se: 'SE', fe: 'FE',
   e27: 'E27', e14: 'E14', gu10: 'GU10', gu5: 'GU5.3', b22: 'B22', dimmschalter: 'mit Dimmschalter', fernbedienung: 'mit Fernbedienung',
   refurbished: 'Refurbished', generalueberholt: 'Refurbished',
+  // Größen (z. B. Hue Play Gradient Light Tube Compact/Large, Lightstrip …)
+  compact: 'Compact', kompakt: 'Compact', large: 'Large', gross: 'Large', small: 'Small', klein: 'Small', medium: 'Medium',
 };
+
+/** Variantenmerkmale eines Titels: Wörter aus VARIANT plus Längenangaben in cm („125cm“, „75 cm“) */
+function variantTags(text: string): string[] {
+  const f = fold(text);
+  const tags = f.split(/[^a-z0-9]+/).filter(Boolean).map((w) => VARIANT[w]).filter((v): v is string => !!v);
+  for (const m of f.matchAll(/(?<![\dx.,])(\d{2,3})\s*cm\b/g)) tags.push(`${m[1]} cm`);
+  return [...new Set(tags)];
+}
 
 export interface Suggestion { label: string; listing_ids: string[]; key: string; count: number; tags: string[]; exclude: string[] }
 
@@ -71,11 +81,10 @@ export function coreTitle(t: string): string {
  * Nur für Produkte ohne Modellnummer (bei Modellnummer ist der Treffer eindeutig).
  */
 export function variantSuggestions(name: string, cands: { id: string; title: string }[]): Suggestion[] {
-  const own = new Set(fold(name).split(/[^a-z0-9]+/).filter(Boolean).map((w) => VARIANT[w] ?? w));
+  const own = new Set(variantTags(name));
   const groups = new Map<string, Suggestion>();
   for (const c of cands) {
-    const words = fold(c.title).split(/[^a-z0-9]+/).filter(Boolean);
-    const tags = [...new Set(words.map((w) => VARIANT[w]).filter((v): v is string => !!v && !own.has(v)))].sort();
+    const tags = variantTags(c.title).filter((v) => !own.has(v)).sort();
     const key = tags.join('+');
     const label = coreTitle(c.title);
     const g = groups.get(key) ?? { key, label, listing_ids: [], count: 0, tags, exclude: [...new Set(tags.flatMap(excludeWords))] };

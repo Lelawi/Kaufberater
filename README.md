@@ -29,7 +29,7 @@ Ablauf eines Worker-Durchlaufs (`worker/src/run.ts`):
 ## Mengen, Packungen, Namen, Bilder
 - **Stückzahl** (`kb_products.quantity`): Bei > 1 (z. B. 40 Lampen) gelten Bestpreis, Schwellen und Diagramm **pro Stück**; der Höchstpreis gilt für die ganze Menge. `jobs/evaluate.ts` rechnet je Händler die günstigste Kombination aus Packungsgrößen (Versand einmal) → `best_basket`.
 - **Packungsgrößen** (`util/pack.ts`): aus Angebots-/Quellen-/Deal-Titeln („3er-Pack“, „Doppelpack“, „Lot de 3“, „2x 3er-Pack“) → `pack_size` an Angeboten, Deals und Verlauf. Bei Einzelprodukten werden Mehrfachpackungs-Deals nicht mit dem Einzelpreis verglichen; Sets mit Zubehör (Starter-Set, Bridge …) bekommen eine Notiz.
-- **Saubere Namen** (`util/naming.ts`): eingetippter Name bekommt die Schreibweise der Treffer („lg oled77g6“ → „LG OLED77G6“, Original in `name_original`). Ohne Modellnummer und bei mehreren Produktvarianten fragt die App „Welches Produkt meinst du?“ (`name_suggestions`); abgewählte Varianten werden nicht mehr überwacht.
+- **Saubere Namen** (`util/naming.ts`): eingetippter Name bekommt die Schreibweise der Treffer („lg oled77g6“ → „LG OLED77G6“, Original in `name_original`). Ohne Modellnummer und bei mehreren Produktvarianten fragt die App „Welches Produkt meinst du?“ (`name_suggestions`); abgewählte Varianten werden nicht mehr überwacht Als Variante zählen auch Größen (Compact/Large/groß, Längen in cm). Bemerkt die Tiefenanalyse später gemischte Varianten, setzt sie `discovery_status='pending'` → die Rückfrage erscheint beim nächsten Durchlauf.
 - **Vorschaubild** (`image_url`): og:image/Produktdaten der abgerufenen Seiten (Preisvergleiche bevorzugt).
 
 ## Schutzmechanismen

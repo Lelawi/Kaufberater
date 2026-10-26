@@ -38,6 +38,16 @@ test('Saubere Namen und Rückfrage bei Varianten', () => {
   assert.deepEqual(s[0].listing_ids, ['0', '3']);
   // Gleiches Produkt in verschiedenen Packungen → keine Rückfrage
   assert.equal(variantSuggestions('Philips hue gu10 white ambiance', [{ id: 'a', title: 'Philips Hue White Ambiance GU10 3er-Pack' }, { id: 'b', title: 'Philips Hue White Ambiance GU10 18er-Pack' }]).length, 1);
+  // Größenvarianten (Compact/Large/groß, Länge in cm) → Rückfrage
+  const tube = variantSuggestions('Hue play gradient light tube', [
+    'Philips Hue Play Gradient Light Tube 125cm weiß', 'Philips Hue Play Gradient Light Tube Compact', 'Philips Hue Play Gradient Light Tube Compact White (915005987901)',
+    'Philips Hue Play Gradient Light Tube groß Schwarz', 'Philips Hue Play Gradient Light Tube Large', 'Philips Hue Play Gradient Light Tube Large Black (915005988201)',
+  ].map((title, i) => ({ id: String(i), title })));
+  assert.deepEqual(tube.map((x) => x.key), ['Large', 'Compact', '125 cm']);
+  assert.deepEqual(tube[0].listing_ids, ['3', '4', '5']);
+  assert.deepEqual(tube[1].exclude, ['compact', 'kompakt']);
+  // Größe schon im Namen → keine Rückfrage deswegen
+  assert.equal(variantSuggestions('Hue gradient light tube large', [{ id: 'a', title: 'Philips Hue Play Gradient Light Tube Large' }, { id: 'b', title: 'Philips Hue Play Gradient Light Tube groß Schwarz' }]).length, 1);
 });
 
 import { computeTrend } from '../src/jobs/trend.ts';
