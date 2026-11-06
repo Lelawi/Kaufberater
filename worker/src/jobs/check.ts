@@ -47,9 +47,13 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
   const stats = { listings: 0, ok: 0, errors: 0, offers: 0, priceChanges: 0 };
   // In der heißen Phase höchstens 25 Minuten bis zur nächsten Abfrage
   const cap = hotWindow() ? 25 : 100_000;
+  const debugged = new Set<string>(); // „kein Preis“-Seiten höchstens einmal pro Quelle und Lauf ablegen
   await Promise.all([...bySource.entries()].map(async ([sourceKey, listings]) => {
     const adapter = sourceByKey(sourceKey);
     if (!adapter) return;
+    // Gesperrte Antworten in Folge: Eine einzelne Seite mit 403 (z. B. ein entferntes Produkt) soll nicht die ganze Quelle pausieren.
+    // Erst wenn zwei Seiten hintereinander gesperrt sind, gilt die Quelle als gesperrt (eine einzelne Seite wartet über ihren eigenen Rückstau).
+    let blockedStreak = 0;
     for (const l of listings) {
       if (Date.now() > deadline) return;
       stats.listings++;
@@ -93,21 +97,27 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
         await sql`update kb_listings set last_checked_at = now(), last_ok_at = now(), last_error = null, error_count = 0,
                    next_check_at = now() + make_interval(mins => least(check_interval_minutes, ${cap})) where id = ${l.id}`;
         await recordSourceResult(sourceKey, true);
+        blockedStreak = 0;
       } catch (e) {
         stats.errors++;
         const msg = (e as Error).message.slice(0, 500);
-        // Bei Fehlern seltener versuchen (max. 1x pro Tag), nach 20 Fehlern in Folge deaktivieren
+        const isBlock = /blockiert/.test(msg);
+        if (isBlock) blockedStreak++;
+        const sourceBlocked = isBlock && blockedStreak >= 2;
+        // Bei Fehlern seltener versuchen (max. 1x pro Tag), nach 20 Fehlern in Folge deaktivieren.
+        // Sperren der ganzen Quelle sind kein Fehler der Seite: höchstens 6 Std. warten und nie deswegen deaktivieren.
         await sql`update kb_listings set last_checked_at = now(), last_error = ${msg}, error_count = error_count + 1,
-                   next_check_at = now() + make_interval(mins => least(1440, check_interval_minutes * power(2, least(error_count + 1, 7))::int)),
-                   active = error_count + 1 < 20
+                   next_check_at = now() + make_interval(mins => least(${isBlock ? 360 : 1440}, check_interval_minutes * power(2, least(error_count + 1, 7))::int)),
+                   active = ${isBlock} or error_count + 1 < 20
                  where id = ${l.id}`;
         if ((e as any).status === 404) await sql`update kb_listings set active = false where id = ${l.id}`;
-        await recordSourceResult(sourceKey, false, msg);
-        if ((e as any).body !== undefined) {
+        await recordSourceResult(sourceKey, false, msg, { block: sourceBlocked });
+        if ((e as any).body !== undefined && (isBlock || !debugged.has(sourceKey))) {
           const be = e as any;
-          await debugLog('gesperrt:' + sourceKey, { url: be.url, status: be.status, headers: { response: be.headers, sent: be.sentHeaders }, body: be.body }).catch(() => {});
+          debugged.add(sourceKey);
+          await debugLog((isBlock ? 'gesperrt:' : 'keinpreis:') + sourceKey, { url: be.url, status: be.status, headers: { response: be.headers, sent: be.sentHeaders }, body: be.body }).catch(() => {});
         }
-        if (/blockiert/.test(msg)) return; // Quelle für diesen Lauf aufgeben
+        if (sourceBlocked) return; // Quelle für diesen Lauf aufgeben
       }
     }
   }));

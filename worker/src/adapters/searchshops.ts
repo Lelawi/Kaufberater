@@ -138,7 +138,7 @@ export function makeSearchShop(cfg: SearchShopConfig): SourceAdapter {
       const p = await fetchPage(l.url, { country: cfg.country, minDelayMs: delay });
       rememberImage(l.url, p.text);
       const o = (cfg.parseProduct ? cfg.parseProduct(p.text, p.url) : parseShopPage(p.text, p.url)) ?? offerNode(p.text, p.url);
-      if (!o) throw new Error('kein Preis auf der Seite gefunden');
+      if (!o) throw noPriceError(p.url, p.status, p.text);
       o.shop = cfg.label;
       o.country = cfg.country;
       o.offerKey = 'page';
@@ -147,4 +147,11 @@ export function makeSearchShop(cfg: SearchShopConfig): SourceAdapter {
       return [o];
     },
   };
+}
+
+/** Fehler „kein Preis“ mit Seitenanfang, damit die Fehlersuche (kb_debug) sieht, was der Shop geliefert hat */
+export function noPriceError(url: string, status: number, html: string): Error {
+  const e = new Error('kein Preis auf der Seite gefunden') as Error & { url?: string; status?: number; body?: string };
+  e.url = url; e.status = status; e.body = html.slice(0, 200_000);
+  return e;
 }
