@@ -45,8 +45,8 @@ Stand der Erreichbarkeit (geprüft 21.10.2026 von GitHub-Actions aus): siehe Tab
 | Quelle | Datei | Läuft auf |
 |---|---|---|
 | idealo.de (hunderte Händler) | `idealo.ts` | GitHub + Pi |
-| billiger.de (+ ca. 6 Monate Preisverlauf) | `billiger.ts` | GitHub + Pi |
-| CHECK24 Preisvergleich (inkl. Amazon, MediaMarkt, Otto, Galaxus, Kaufland, Cyberport …; + Preisverlauf). Produktseiten antworten gelegentlich mit 403 → 30 Min. Pause, dann erneut | `check24.ts` | GitHub + Pi |
+| billiger.de (+ ca. 6 Monate Preisverlauf). Seit 05.11.2026 Cloudflare-Prüfseite (403) für GitHub-Server → Pause wächst bis 6 Std.; vom Pi aus voraussichtlich erreichbar | `billiger.ts` | GitHub + Pi |
+| CHECK24 Preisvergleich (inkl. Amazon, MediaMarkt, Otto, Galaxus, Kaufland, Cyberport …; + Preisverlauf). Einzelne Produktseiten antworten mit 403 → nur diese Seite wartet; erst zwei gesperrte Seiten in Folge pausieren die Quelle (30 Min. bis 6 Std., je nach Dauer der Störung) | `check24.ts` | GitHub + Pi |
 | Shops mit eigener Suche: Coolblue, Alternate, Berlet, Medimax, jacob, technikdirekt, BAUR, Quelle, voelkner, rebuy (gebraucht), HiFi-Profis (Shopify), OBI | `shopconfigs.ts` (Baustein `searchshops.ts`) | GitHub + Pi |
 | eBay (offizielle Browse-API, nur mit `EBAY_APP_ID`/`EBAY_CERT_ID`) | `ebay.ts` | GitHub + Pi |
 | Pepper-Portale (DE/AT/FR/ES/IT) | `pepper.ts` | GitHub + Pi |
