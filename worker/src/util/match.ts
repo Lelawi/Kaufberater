@@ -57,6 +57,11 @@ const FIXTURE = ['leuchte', 'deckenleuchte', 'pendelleuchte', 'stehleuchte', 'ti
   'centura', 'lily', 'ensis', 'signe', 'flourish', 'devote', 'being', 'enrave', 'still'];
 const VARIANT_WORDS = ['pro', 'max', 'plus', 'ultra', 'mini', 'lite', 'se', 'fe', 'neo', 'air', 'xl', 'slim', 'edge'];
 
+/** Reine Zahl mit weniger als 6 Ziffern („1700“) – kommt in vielen fremden Titeln vor (LGA1700, 1700 W, 2700 K) */
+export function weakKey(k: string): boolean {
+  return /^\d+$/.test(k) && k.length < 6;
+}
+
 export interface MatchResult { score: number; reason: string }
 
 export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: string | null; mpn?: string | null; brand?: string | null } = {}): MatchResult {
@@ -109,6 +114,14 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   // Modellnummer im Titel suchen – pro Wort, damit der Rest des Wortes geprüft werden kann
   const tokens = (title.toUpperCase().match(/[A-Z0-9][A-Z0-9-]*[A-Z0-9]|[A-Z0-9]/g) ?? []).map((t) => t.replace(/-/g, ''));
   for (const k of keys) {
+    // Schwache Nummer („1700“): nur als eigenes Wort und nur, wenn auch alle übrigen Namensteile („Fritz“, „Repeater“) im Titel stehen
+    if (weakKey(k)) {
+      if (!tokens.includes(k)) continue;
+      const others = words(p.name).filter((w) => norm(w) !== k && (w.length > 1 || /\d/.test(w)));
+      const allThere = others.length > 0 && others.every((w) => tw.has(w) || (norm(w).length >= 3 && nt.includes(norm(w))));
+      if (!allThere) continue;
+      return { score: 0.92 * penalty, reason: `Modellnummer ${k} und Name im Titel` + penaltyReason };
+    }
     // Erst wortgenau, dann über Wortgrenzen hinweg (z. B. "OLED 77G6" vs. "OLED77G6")
     const tok = tokens.find((t) => t.includes(k)) ?? (nt.includes(k) ? k : null);
     if (!tok) continue;
@@ -126,7 +139,8 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   if (tw.has('matter')) tw.add('+m');
   if (tw.has('+m')) tw.add('matter');
   // Sehr kurze Wörter („+M“, „II“) nur als ganzes Wort zählen – sonst passt „M“ zu jedem Titel mit einem M
-  const hits = nameWords.filter((w) => tw.has(w) || (norm(w).length >= 3 && nt.includes(norm(w))));
+  // Reine Zahlen („1700“) nur als ganzes Wort – sonst passt „1700“ zu „LGA1700“ oder „1700W“
+  const hits = nameWords.filter((w) => tw.has(w) || (!/^\d+$/.test(w) && norm(w).length >= 3 && nt.includes(norm(w))));
   let score = hits.length / nameWords.length;
   // Fehlt ein Wort, das eine Variante kennzeichnet („+M“/Matter, Pro, Max …), ist es ein anderes Produkt
   const missingVariant = nameWords.filter((w) => (VARIANT_WORDS.includes(w) || w === '+m' || w === 'matter') && !hits.includes(w));

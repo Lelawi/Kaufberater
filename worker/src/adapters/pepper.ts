@@ -62,7 +62,8 @@ export function parsePepperList(html: string, portal: Portal): DealData[] {
 /** Suchbegriffe: volle Modellnummer, Kurzform ohne Präfix, Name */
 export function dealQueries(q: ProductQuery): string[] {
   const qs = new Set<string>();
-  if (q.model) {
+  // Eine reine Zahl („1700“) allein als Suchbegriff liefert lauter fremde Deals → dann mit Namen suchen
+  if (q.model && !weakKey(norm(q.model))) {
     qs.add(q.model);
     const short = q.model.replace(/^(OLED|QLED|UE|GQ|QE|KD|XR|TX|KQ)/i, '');
     if (short.length >= 4 && short !== q.model) qs.add(short);

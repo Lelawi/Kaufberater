@@ -24,6 +24,26 @@ test('Produktabgleich', () => {
   assert.ok(matchTitle(ip, 'Panzerglas für iPhone 16 Pro 256GB').score < 0.75);
 });
 
+test('Kurze Zahl als Modellnummer (Fritz Repeater 1700)', () => {
+  const q = { name: 'Fritz Repeater 1700', model: '1700' };
+  assert.ok(matchTitle(q, 'FRITZ!Repeater 1700 | WLAN Mesh Erweiterung | Wi-Fi 7').score >= 0.9);
+  assert.ok(matchTitle(q, 'AVM FRITZRepeater 1700 WiFi 7 WLAN Mesh Verstärker').score >= 0.7);
+  for (const t of [
+    'Thermalright AQUA ELITE 360 V3 Flüssig-CPU-Kühler AMD/AM4/AM5, Intel LGA1150/1151/1200/1700/1851,',
+    'WOOX MX0210 Limpiador de Alfombras y Tapicería a Vapor 1700W con Potente Succión 15KPa',
+    'Ninja CRISPi tragbare Heißluftfritteuse, 3,8 l, 4-in-1, 1700 W, Stone Gold',
+    'ASUS Prime B760M-A WiFi 6 Mainboard Sockel Intel LGA 1700, mATX, DDR5',
+    'Montre Casio AE-1700H - Quartz, Noir Et Gris',
+  ]) assert.ok(matchTitle(q, t).score < 0.7, t);
+  const q2 = { name: 'FRITZ Repeater 2700', model: '2700' };
+  assert.ok(matchTitle(q2, 'FRITZ! Repeater 2700 Edition E | WLAN Mesh | Wi-Fi 7').score >= 0.9);
+  assert.ok(matchTitle(q2, 'Sigenmate 2700 Ultra mit 2 Erweiterungsakkus - Balkonkraftwerk').score < 0.7);
+  assert.ok(matchTitle(q2, 'Plafón LED Regulable 30W 2700K/4000K/6500K con Mando a Distancia').score < 0.7);
+  assert.ok(matchTitle(q2, 'LG OLED83C69LB 210 cm (83") OLED evo AI TV über 2700 NITS').score < 0.7);
+  // Lange Artikelnummern bleiben eindeutig
+  assert.ok(matchTitle({ name: 'Bosch Tür-/Fensterkontakt II +M', terms: ['8750002952'] }, 'Bosch Smart Home 8750002952 Kontakt').score >= 0.9);
+});
+
 test('Zustand erkennen', () => {
   assert.equal(conditionFromTitle('LG OLED77G68LW – B-Ware, Verpackung beschädigt'), 'bware');
   assert.equal(conditionFromTitle('iPhone 15 generalüberholt'), 'refurbished');
