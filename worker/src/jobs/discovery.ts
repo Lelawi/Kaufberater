@@ -7,6 +7,7 @@ import type { Candidate, SourceAdapter } from '../adapters/types.ts';
 import { variantCodes, modelKeys, packQueries, matchTitle } from '../util/match.ts';
 import { cleanName, variantSuggestions, identifyOptions } from '../util/naming.ts';
 import { ebayConfigured } from '../adapters/ebay.ts';
+import { makerShopCandidates } from '../adapters/maker.ts';
 
 const MIN_SCORE = 0.75;
 const MAX_PER_SOURCE = 3;
@@ -69,6 +70,25 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
         if (c.score >= 0.8 && c.title) goodTitles.push(c.title);
       }
     }
+    // Nichts Passendes gefunden (z. B. Produkte, die es nur beim Hersteller gibt): im Hersteller-Shop nachsehen
+    const makerSuggestions: { title: string; url: string; source: string; price: number | null }[] = [];
+    if (!goodTitles.length) {
+      const [{ n }] = await sql`select count(*)::int as n from kb_listings where product_id = ${p.id} and not rejected and match_score >= ${MIN_SCORE}`;
+      if (n === 0) {
+        try {
+          const maker = await makerShopCandidates(q);
+          makerSuggestions.push(...maker.suggestions);
+          for (const c of maker.cands) {
+            const ins = await sql`
+              insert into kb_listings (product_id, user_id, source, country, external_id, url, title, condition, discovered_by, match_score, next_check_at)
+              values (${p.id}, ${p.user_id}, 'shop', 'DE', ${c.externalId}, ${c.url}, ${c.title?.slice(0, 500) ?? null}, 'new', 'hersteller', ${c.score}, now())
+              on conflict (product_id, source, country, external_id) do nothing returning id`;
+            if (ins.length) listingsAdded++;
+            if (c.score >= 0.8 && c.title) goodTitles.push(c.title);
+          }
+        } catch (e) { console.log('Hersteller-Shop:', (e as Error).message); }
+      }
+    }
     // Gefundene Modellvarianten (z. B. OLED77G68LW, OLED77G67LW) merken: verbessert die Deal-Suche und spätere Suchen
     const newTerms = [...learned].filter((v) => !(p.search_terms ?? []).map((x) => x.toUpperCase()).includes(v)).slice(0, 6);
     // Ist eine Quelle ausgefallen (z. B. kurz gesperrt), in ca. 6 Stunden noch einmal suchen statt erst in einer Woche
@@ -86,7 +106,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
     }
     // Nichts eindeutig gefunden (z. B. „Bosch Heizungsthermostat Matter“ statt „Heizkörper-Thermostat II [+M]“):
     // ähnliche Produkte zur Auswahl anbieten
-    const all = results.flatMap((r) => (r.status === 'fulfilled' ? r.value.cands.map((c: Candidate) => ({ title: c.title ?? '', url: c.url, source: r.value.source.key, price: c.price ?? null })) : []));
+    const all = [...makerSuggestions, ...results.flatMap((r) => (r.status === 'fulfilled' ? r.value.cands.map((c: Candidate) => ({ title: c.title ?? '', url: c.url, source: r.value.source.key, price: c.price ?? null })) : []))];
     await offerChoices(p, all, sources).catch((e) => console.log('Auswahl:', (e as Error).message));
   }
   return { products: products.length, listingsAdded };
