@@ -10,6 +10,7 @@ import { refurbedAdapter } from './refurbed.ts';
 import { ebayAdapter, ebayConfigured } from './ebay.ts';
 import { check24Adapter } from './check24.ts';
 import { shopSearchAdapters } from './shopconfigs.ts';
+import { marktguruAdapter } from './marktguru.ts';
 
 export const SOURCES: SourceAdapter[] = [
   ...geizhalsAdapters,
@@ -24,7 +25,8 @@ export const SOURCES: SourceAdapter[] = [
   ...shopSources,
 ];
 
-export const DEAL_SOURCES: DealAdapter[] = [...pepperAdapters];
+// Prospekt-Angebote (Lidl, Aldi, Kaufland, MediaMarkt, Saturn …) über Marktguru – gilt im Laden/Prospekt-Zeitraum
+export const DEAL_SOURCES: DealAdapter[] = [...pepperAdapters, marktguruAdapter];
 
 export function sourceByKey(key: string): SourceAdapter | undefined {
   return SOURCES.find((s) => s.key === key);

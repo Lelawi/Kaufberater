@@ -50,6 +50,9 @@ Stand der Erreichbarkeit (geprüft 21.10.2026 von GitHub-Actions aus): siehe Tab
 | Shops mit eigener Suche: Coolblue, Alternate, Berlet, Medimax, jacob, technikdirekt, BAUR, Quelle, voelkner, rebuy (gebraucht), HiFi-Profis (Shopify), OBI | `shopconfigs.ts` (Baustein `searchshops.ts`) | GitHub + Pi |
 | eBay (offizielle Browse-API, nur mit `EBAY_APP_ID`/`EBAY_CERT_ID`) | `ebay.ts` | GitHub + Pi |
 | Pepper-Portale (DE/AT/FR/ES/IT) | `pepper.ts` | GitHub + Pi |
+| Prospekt-Angebote aller Ketten über Marktguru (Lidl, Aldi, Kaufland, MediaMarkt, Saturn, Penny …; PLZ `kb_worker_config.zip`, alle 4 Std., heiße Phase öfter) – als Deals | `marktguru.ts` | GitHub + Pi |
+| AliExpress (Suche über eingebettete Trefferliste, Preisabfrage über die Suche nach dem Titel; Marktplatz → Importware möglich) | `shopconfigs.ts` | GitHub + Pi (ungeprüft) |
+| Joybuy: Suche nur über signierte Schnittstelle → nicht automatisch; Produktseiten (schema.org) als Link überwachbar | `shops.ts` | GitHub + Pi |
 | Einzelne Shop-Seiten mit Produktdaten (Links aus Analyse/Eintragen) | `shops.ts` | GitHub + Pi |
 | Amazon DE/FR/IT/ES/NL | `amazon.ts` | nur Pi (blockt Rechenzentren) |
 | Geizhals | `geizhals.ts` | nur Pi |

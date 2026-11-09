@@ -42,6 +42,9 @@ export const SHOP_RULES: Record<string, ShopRule> = {
   'alza.de': { name: 'Alza', country: 'DE', needsHome: true },
   'backmarket.de': { name: 'Back Market', country: 'DE', needsHome: true },
   'ebay.de': { name: 'eBay', country: 'DE', needsHome: true, price: '.x-price-primary span' },
+  // Joybuy (JD.com Europa): Suche nur über signierte Schnittstelle → nicht automatisch; Produktseiten haben schema.org-Daten
+  'joybuy.de': { name: 'Joybuy', country: 'DE' },
+  'aliexpress.com': { name: 'AliExpress', country: 'DE' },
   'ldlc.com': { name: 'LDLC', country: 'FR' },
   'pccomponentes.com': { name: 'PcComponentes', country: 'ES' },
 };

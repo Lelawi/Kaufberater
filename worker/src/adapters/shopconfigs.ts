@@ -1,10 +1,11 @@
 // Shops mit eigener Suche, die von GitHub aus erreichbar sind (geprüft am 21.10.2026). Alle liefern nach Deutschland.
-import { loadHtml, absUrl, extractProduct } from '../util/extract.ts';
+import { loadHtml, absUrl, extractProduct, embeddedJson } from '../util/extract.ts';
+import { fetchPage } from '../util/http.ts';
 import { parsePrice } from '../util/money.ts';
 import { cleanText, conditionFromTitle } from './common.ts';
-import { makeSearchShop, hitsFromJsonLd, type SearchHit, type SearchShopConfig } from './searchshops.ts';
+import { makeSearchShop, hitsFromJsonLd, noPriceError, type SearchHit, type SearchShopConfig } from './searchshops.ts';
 import { parseShopPage } from './shops.ts';
-import type { OfferData, SourceAdapter } from './types.ts';
+import type { ListingRef, OfferData, SourceAdapter } from './types.ts';
 import { searchQuery, type ProductQuery } from '../util/match.ts';
 
 const enc = encodeURIComponent;
@@ -166,11 +167,53 @@ function shopify(key: string, label: string, base: string): SourceAdapter {
   });
 }
 
+/** AliExpress (9.11.2026, Wunsch Nutzer für Singles Day): Die Suchseite bettet die Trefferliste als JSON ein
+ *  ("itemList":{"content":[…]}), Produktseiten laden den Preis erst im Browser nach. Preisabfrage daher über die Suche nach
+ *  dem gespeicherten Titel (Treffer mit gleicher Artikelnummer). Marktplatz: Importware/Länderversion möglich (plausible.ts). */
+export function aliexpressHits(html: string): (SearchHit & { freeShipping?: boolean })[] {
+  const list = embeddedJson(html, '"itemList":');
+  return ((list?.content ?? []) as any[]).filter((it) => it?.productId && it?.title?.displayTitle).map((it) => {
+    const sale = it.prices?.salePrice;
+    const price = typeof sale?.minPrice === 'number' ? sale.minPrice : parsePrice(String(sale?.formattedPrice ?? ''));
+    const free = JSON.stringify(it.sellingPoints ?? []).includes('Free_Shipping');
+    return {
+      title: cleanText(it.title.displayTitle), url: `https://de.aliexpress.com/item/${it.productId}.html`,
+      price: price ?? null, externalId: String(it.productId), condition: 'new' as const, freeShipping: free,
+    };
+  });
+}
+const aliSearchUrl = (t: string) => `https://de.aliexpress.com/w/wholesale-${enc(t.trim().replace(/\s+/g, '-'))}.html`;
+const aliBase = makeSearchShop({
+  key: 'aliexpress', label: 'AliExpress', base: 'https://de.aliexpress.com', country: 'DE', kind: 'marketplace',
+  searchUrl: aliSearchUrl, parseSearch: aliexpressHits, minDelayMs: 6000,
+});
+const aliexpress: SourceAdapter = {
+  ...aliBase,
+  async fetch(l: ListingRef): Promise<OfferData[]> {
+    // Suche schwankt: erst langer, dann kurzer Titel
+    const words = (l.title ?? '').split(/\s+/).filter(Boolean);
+    let hit: ReturnType<typeof aliexpressHits>[number] | undefined;
+    let p: Awaited<ReturnType<typeof fetchPage>> | undefined;
+    for (const n of [12, 6]) {
+      if (!words.length) break;
+      p = await fetchPage(aliSearchUrl(words.slice(0, n).join(' ')), { country: 'DE', minDelayMs: 6000 });
+      hit = aliexpressHits(p.text).find((h) => h.externalId === l.external_id);
+      if (hit?.price || words.length <= 6) break;
+    }
+    if (!hit?.price) throw noPriceError(p?.url ?? l.url, p?.status ?? 0, p?.text ?? '');
+    return [{
+      offerKey: 'page', shop: 'AliExpress', country: 'DE', condition: 'new', title: hit.title, url: l.url, price: hit.price,
+      shipping: hit.freeShipping ? 0 : null, inStock: true, seller: 'Marktplatz',
+    }];
+  },
+};
+
 export const shopSearchAdapters: SourceAdapter[] = [
   ...CONFIGS.map(makeSearchShop),
   shopify('hifiprofis', 'HiFi-Profis', 'https://www.hifi-profis-da.de'),
   // OBI (geprüft 23.10.2026): Suchseite mit schema.org-Trefferliste, Produktseiten mit Produktdaten
   makeSearchShop({ key: 'obi', label: 'OBI', base: 'https://www.obi.de', country: 'DE', searchUrl: (t) => `https://www.obi.de/search/${enc(t)}/` }),
+  aliexpress,
 ];
 
 export { hitsFromJsonLd };

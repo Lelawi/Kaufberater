@@ -2,7 +2,7 @@
 // chollometro (ES), pepper.it (IT), pepper.pl (PL). Liefern auch abgelaufene Deals → Preisgeschichte.
 import { fetchPage } from '../util/http.ts';
 import { loadHtml } from '../util/extract.ts';
-import { matchTitle, norm, type ProductQuery } from '../util/match.ts';
+import { matchTitle, norm, weakKey, type ProductQuery } from '../util/match.ts';
 import type { DealAdapter, DealData } from './types.ts';
 
 interface Portal { key: string; label: string; host: string; country: string }
