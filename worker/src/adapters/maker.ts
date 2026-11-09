@@ -31,10 +31,41 @@ export function productLinks(html: string, base: string): { url: string; title: 
     const title = /[a-z]/i.test(slug) && !/^[0-9a-f]{16,}$/i.test(slug) ? `${slug} ${text}`.slice(0, 160) : text.slice(0, 160);
     if (title.length >= 3 && (!seen.has(url) || seen.get(url)!.length < title.length)) seen.set(url, title);
   });
-  return [...seen.entries()].map(([url, title]) => ({ url, title }));
+  // Produktadressen, die nur in eingebetteten Seitendaten stehen (z. B. Nuxt/Shopware: „products/zeeu412/zuriga-e2-s“)
+  const raw = html.replace(/\\u002F/gi, '/');
+  for (const m of raw.matchAll(/["'(\s]((?:https?:\/\/[^"'\s]+)?\/?(?:[a-z]{2}\/[a-z]{2}\/)?(?:products?|produkte?)\/[a-z0-9]+\/[a-z0-9-]{3,})["'\s)]/gi)) {
+    const url = absUrl(m[1].startsWith('/') || m[1].startsWith('http') ? m[1] : '/' + m[1], base)?.split(/[?#]/)[0];
+    if (!url || new URL(url).host !== host || seen.has(url)) continue;
+    // relative Pfade ohne Sprachteil an den Sprachteil der Basis hängen (zuriga.com/de/de/…)
+    seen.set(url, decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() ?? '').replace(/[-_]+/g, ' '));
+  }
+  return [...seen.entries()].map(([url, title]) => ({ url, title: withJoined(title) }));
+}
+
+/** „zuriga e2 s“ → zusätzlich „e2s“, damit eingetippte Schreibweisen ohne Bindestrich passen */
+function withJoined(title: string): string {
+  const t = title.split(/[\s-]+/).filter(Boolean);
+  const joined = t.map((w, i) => (i > 0 && w.length <= 2 && /\d/.test(t[i - 1] + w) ? t[i - 1] + w : '')).filter(Boolean);
+  return joined.length ? `${title} ${joined.join(' ')}` : title;
 }
 
 export interface MakerResult { cands: Candidate[]; suggestions: { title: string; url: string; source: string; price: number | null }[] }
+
+/** Titel ist eine Variante mit Zusatz, der nicht gesucht wurde („Zuriga E2“ ≠ „ZURIGA E2-S“) */
+function otherVariant(query: string, title: string): boolean {
+  const toks = (x: string) => {
+    const t = x.toLowerCase().split(/[\s,()/]+/).filter(Boolean);
+    return t.map((w) => w.replace(/-/g, '')).concat(t.map((w, i) => (i > 0 && w.length <= 2 ? t[i - 1] + w : '')).filter(Boolean));
+  };
+  const qt = new Set(toks(query));
+  return toks(title).some((w) => /\d/.test(w) && !qt.has(w) && [...qt].some((q) => /\d/.test(q) && q.length >= 2 && w.startsWith(q) && w.length <= q.length + 2));
+}
+
+function dedupe(list: { url: string; title: string }[]) {
+  const m = new Map<string, string>();
+  for (const l of list) if (!m.has(l.url) || m.get(l.url)!.length < l.title.length) m.set(l.url, l.title);
+  return [...m.entries()].map(([url, title]) => ({ url, title }));
+}
 
 export async function makerShopCandidates(q: ProductQuery): Promise<MakerResult> {
   const brand = brandOf(q);
@@ -52,7 +83,14 @@ export async function makerShopCandidates(q: ProductQuery): Promise<MakerResult>
           .filter((u): u is string => !!u && /\/(products|produkte|shop|sortiment|kollektion|maschinen)\/?$/i.test(u.split(/[?#]/)[0])))].slice(0, 2)
       : [];
     for (const u of overview) { try { pages.push(await fetchPage(u, { country: 'DE', minDelayMs: 2000, retries: 0 })); } catch { /* egal */ } }
-    const links = pages.flatMap((p) => productLinks(p.text, p.url));
+    let links = dedupe(pages.flatMap((p) => productLinks(p.text, p.url)));
+    // Eine Ebene tiefer: Produktseiten verweisen oft auf Varianten (E2 → E2-S), die auf der Startseite fehlen
+    const prelim = links.map((l) => ({ ...l, s: Math.max(matchTitle(q, `${q.brand ?? brand} ${l.title}`).score, fuzzyScore(q.name, l.title)) }))
+      .sort((a, b) => b.s - a.s).slice(0, 2);
+    for (const l of prelim) {
+      try { const pg = await fetchPage(l.url, { country: 'DE', minDelayMs: 2000, retries: 0 }); links = dedupe([...links, ...productLinks(pg.text, pg.url)]); }
+      catch { /* egal */ }
+    }
     const all = links.map((l) => ({ ...l, score: matchTitle(q, `${q.brand ?? brand} ${l.title}`).score })).sort((a, b) => b.score - a.score);
     const scored = all.filter((l) => l.score >= 0.6).slice(0, 4);
     // Nichts eindeutig (z. B. Tippfehler „E2s“): die ähnlichsten Produkte des Herstellers als Auswahl „Meinst du …?“
@@ -72,7 +110,9 @@ export async function makerShopCandidates(q: ProductQuery): Promise<MakerResult>
         const page = await fetchPage(l.url, { country: 'DE', minDelayMs: 2000, retries: 0 });
         const o = parseShopPage(page.text, page.url);
         if (!o?.price) continue;
+        if (otherVariant(q.name, o.title ?? l.title)) continue;
         const r = matchTitle(q, o.title ?? l.title);
+        if (out.some((x) => x.title === (o.title ?? l.title) && x.price === o.price)) continue;   // gleiche Ausführung unter zweiter Adresse
         out.push({ externalId: createHash('md5').update(page.url).digest('hex'), url: page.url, title: o.title ?? l.title, country: 'DE',
                    price: o.price, score: Math.max(r.score, l.score), reason: 'Hersteller-Shop', condition: 'new' });
       } catch { /* Seite nicht lesbar */ }
