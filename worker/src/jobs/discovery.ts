@@ -81,7 +81,7 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
           for (const c of maker.cands) {
             const ins = await sql`
               insert into kb_listings (product_id, user_id, source, country, external_id, url, title, condition, discovered_by, match_score, next_check_at)
-              values (${p.id}, ${p.user_id}, 'shop', 'DE', ${c.externalId}, ${c.url}, ${c.title?.slice(0, 500) ?? null}, 'new', 'hersteller', ${c.score}, now())
+              values (${p.id}, ${p.user_id}, 'shop', 'DE', ${c.externalId}, ${c.url}, ${c.title?.slice(0, 500) ?? null}, 'new', 'search', ${c.score}, now())
               on conflict (product_id, source, country, external_id) do nothing returning id`;
             if (ins.length) listingsAdded++;
             if (c.score >= 0.8 && c.title) goodTitles.push(c.title);
@@ -98,7 +98,8 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
               search_terms = ${[...(p.search_terms ?? []), ...newTerms]} where id = ${p.id}`;
     await tidyName(p, goodTitles).catch((e) => console.log('Name:', (e as Error).message));
     // Früher gefundene Quellen mit dem aktuellen Abgleich neu prüfen (z. B. Fensterkontakt ohne „+M“ bei gesuchtem +M-Modell)
-    const old = await sql`select id, title from kb_listings where product_id = ${p.id} and not rejected and discovered_by = 'search' and title is not null`;
+    // (Hersteller-Shop-Treffer – Quelle „shop“ – sind schon geprüft, auch mit Schreibweisen wie e2s = E2-S)
+    const old = await sql`select id, title from kb_listings where product_id = ${p.id} and not rejected and discovered_by = 'search' and source <> 'shop' and title is not null`;
     const bad = old.filter((l) => matchTitle(toQuery(p), l.title as string).score < 0.5).map((l) => l.id as string);
     if (bad.length) {
       await sql`update kb_listings set rejected = true where id = any(${bad}::uuid[])`;
