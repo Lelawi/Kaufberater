@@ -172,7 +172,9 @@ function shopify(key: string, label: string, base: string): SourceAdapter {
  *  dem gespeicherten Titel (Treffer mit gleicher Artikelnummer). Marktplatz: Importware/Länderversion möglich (plausible.ts). */
 export function aliexpressHits(html: string): (SearchHit & { freeShipping?: boolean })[] {
   const list = embeddedJson(html, '"itemList":');
-  return ((list?.content ?? []) as any[]).filter((it) => it?.productId && it?.title?.displayTitle).map((it) => {
+  // Lager außerhalb der EU („USA Stock“, „UK Warehouse“) – in Deutschland nicht bestellbar
+  const foreignStock = /\b(us|usa|uk|cn|china|ru|au)\s*(stock|warehouse|lager|shipping|versand)\b/i;
+  return ((list?.content ?? []) as any[]).filter((it) => it?.productId && it?.title?.displayTitle && !foreignStock.test(it.title.displayTitle)).map((it) => {
     const sale = it.prices?.salePrice;
     const price = typeof sale?.minPrice === 'number' ? sale.minPrice : parsePrice(String(sale?.formattedPrice ?? ''));
     const free = JSON.stringify(it.sellingPoints ?? []).includes('Free_Shipping');

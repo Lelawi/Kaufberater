@@ -1,5 +1,6 @@
 // Bewertet die gesammelten Angebote: Endpreis nach Cashback/Gutscheinen, Bestpreise, Schwellen,
 // Preisschutz nach dem Kauf, Ende des Zeitfensters, künstliche Rabatte, Bündel-Möglichkeiten
+import { IMPORT_MARKET } from '../util/plausible.ts';
 import { db } from '../db.ts';
 import { fmtEur, round2 } from '../util/money.ts';
 import { sameShop, normShop } from '../util/shop.ts';
@@ -88,7 +89,10 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     // Für Bestpreis und Meldungen nur Händler mit ordentlichen Bewertungen (unbekannte Bewertung zählt als ok)
     // Unsicher = kaum Bewertungen (< 20) oder schlecht bewertet bei wenigen Bewertungen. Große Ketten mit
     // tausenden Bewertungen bleiben drin, auch wenn ihr Schnitt mäßig ist.
+    // Import-Marktplätze (AliExpress …) zählen nie als Bestpreis/Meldung: Versand aus dem Ausland, Länderversion, keine
+    // deutsche Garantie (9.11.: Klipsch „USA Stock“ bei AliExpress als „Sofort zuschlagen“ gemeldet – in DE nicht lieferbar)
     const trusted = (e: (typeof enriched)[number]) =>
+      !IMPORT_MARKET.test(e.o.shop) &&
       !(e.o.shop_reviews != null && e.o.shop_reviews < 20) &&
       !(e.o.shop_rating != null && e.o.shop_rating < 3.5 && (e.o.shop_reviews ?? 0) < 500);
     // Mengen-Produkte (z. B. 40 Lampen): je Händler den günstigsten Einkauf aus allen Packungsgrößen berechnen;
