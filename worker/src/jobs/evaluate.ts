@@ -85,7 +85,10 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       from kb_offers where product_id = ${p.id} and not gone and coalesce(in_stock, true)
         -- nur kürzlich bestätigte Preise (Review 11.11.): Quelle gesperrt/Listing deaktiviert → Angebot blieb sonst
         -- wochenlang „lieferbar“ und konnte Bestpreis bleiben oder Alarme auslösen
-        and last_seen_at > now() - interval '48 hours'
+        and last_seen_at > now() - interval '24 hours'
+        -- Quelle abgeschaltet (404 „Produkt nicht verfügbar“, 20 Fehler in Folge) → Angebot zählt nicht mehr, auch wenn es
+        -- erst vor Kurzem gesehen wurde (11.11.: LG G6 bei Berlet 404, stand trotzdem als Bestpreis da)
+        and listing_id not in (select id from kb_listings where product_id = ${p.id} and not active)
         and listing_id not in (select id from kb_listings where product_id = ${p.id} and rejected)
         and (disputed_total is null or disputed_total <> total) -- vom Nutzer als falsch gemeldeter Preis (bis er sich ändert)
       `;
