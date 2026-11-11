@@ -4,6 +4,7 @@
 import { db } from '../db.ts';
 import { createAlert } from './alerts.ts';
 import { fmtEur } from '../util/money.ts';
+import { PRICE_ERROR } from '../util/plausible.ts';
 
 function roundNice(v: number): number {
   if (v >= 1000) return Math.round(v / 10) * 10 - 1;     // 2.499 statt 2.503
@@ -62,7 +63,9 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
     const multi = Number(p.quantity ?? 1) > 1;
     const deals = await sql`select price / case when ${multi} then pack_size else 1 end as price from kb_deals
                             where product_id = ${p.id} and price is not null and match_score >= 0.85 and (${multi} or pack_size = 1)
-                            and notes is null and (posted_at is null or posted_at > now() - interval '18 months')`;
+                            and notes is null and (posted_at is null or posted_at > now() - interval '18 months')
+                            -- Preisfehler kommen nicht wieder (11.11.) – sonst zöge einer die Stufe „sofort“ unerreichbar nach unten
+                            and title !~* ${PRICE_ERROR.source.replace(/\\b/g, '\\y')}`;   // Postgres: Wortgrenze heißt \y
     // Preisverlauf der Preisvergleiche (ca. 6 Monate): 10-%-Tiefpunkt, damit ein einzelner Ausreißer-Tag nicht zählt
     const [h] = await sql`select percentile_cont(0.1) within group (order by d.m) as low, count(*)::int as n from (
                             select (observed_at at time zone 'Europe/Berlin')::date as day, min(total / case when ${multi} then pack_size else 1 end) as m from kb_price_history

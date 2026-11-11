@@ -5,7 +5,7 @@ import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
 import { createAlert } from './alerts.ts';
 import { fmtEur } from '../util/money.ts';
-import { IMPORT_MARKET } from '../util/plausible.ts';
+import { IMPORT_MARKET, PRICE_ERROR } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
 import { packSize } from '../util/pack.ts';
 
@@ -35,6 +35,7 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
       catch (e) { await recordSourceResult(ad.key, false, (e as Error).message); return; }
       for (const d of deals as any[]) {
         stats.found++;
+        if (PRICE_ERROR.test(d.title)) continue;   // Preisfehler kommen nicht wieder – weder Deal noch Verlauf
         const importWare = IMPORT_MARKET.test(d.merchant ?? '') || IMPORT_MARKET.test(d.title);
         const pack = packSize(d.title) ?? 1;
         // Mengen-Produkte: Deal-Preis pro Stück vergleichen (Schwellen und Bestpreis gelten dann pro Stück)

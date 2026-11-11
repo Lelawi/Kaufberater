@@ -28,5 +28,8 @@ export function plausibleOffers<T extends OfferData>(offers: T[]): T[] {
   });
 }
 
+/** Preisfehler/Glitches: kommen so nicht wieder → nie als Deal, Preisverlauf oder Grundlage für Schwellen (11.11.) */
+export const PRICE_ERROR = /preis\s*-?\s*fehler|fehlerpreis|price\s*(?:error|glitch|mistake)|pricing\s*error|falsch\s*ausgezeichnet|preis-?glitch|\bglitch\b|erreur\s*de\s*prix|error\s*de\s*precio|errore\s*di\s*prezzo/i;
+
 /** Marktplätze, auf denen oft Importware/andere Länderversionen verkauft werden (Garantie, Netzteil, Sprache prüfen) */
 export const IMPORT_MARKET = /\b(aliexpress|temu|wish|joybuy|banggood|gearbest|tomtop|geekbuying)\b/i;
