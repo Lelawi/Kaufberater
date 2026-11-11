@@ -189,3 +189,16 @@ test('Zubehör und andere Varianten abwerten', () => {
   assert.ok(mt(hue, 'Philips Hue White GU10 LED Spot 3er Pack').score < 0.75);
   assert.ok(mt(hue, 'Philips Hue White Ambiance GU10 3er-Pack').score >= 0.75);
 });
+
+// 11.11.: allgemeine Shop-Aktionen erkennen (werden beim Preis eingerechnet), alles Bedingte nicht
+import { isGeneralPromo, minOrderOf } from '../src/jobs/vouchers.ts';
+test('Allgemeine Shop-Aktionen', () => {
+  assert.ok(isGeneralPromo('11% Direktabzug zum Singles Days bei SATURN'));
+  assert.ok(isGeneralPromo('Singles Day: 11 € Rabatt ab 100 € Einkaufswert'));
+  assert.equal(minOrderOf('Singles Day: 11 € Rabatt ab 100 € Einkaufswert'), 100);
+  assert.equal(minOrderOf('20 € Gutschein ab 150 € MBW'), 150);
+  for (const t of ['Energiespartage: Bis zu 50% Rabatt auf Deine Bestellung', '10€ tink Rabattcode auf das Philips Hue Sortiment erhalten',
+    '10€ Gutschein & Gratis-Versand im Club sichern!', 'Sichere Dir 400€ Direktabzug im LG TV und Soundbar Set',
+    'Zahle sogar 50% weniger für Heimkinosysteme', 'Rezension verfassen und 100€ SATURN Coupon ergattern',
+    '15-Euro-Gutschein auf das gesamte tink-Sortiment (Newsletter aktivieren) 200 EUR MBW']) assert.ok(!isGeneralPromo(t), t);
+});

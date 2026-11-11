@@ -1,6 +1,5 @@
 // Bewertet die gesammelten Angebote: Endpreis nach Cashback/Gutscheinen, Bestpreise, Schwellen,
 // Preisschutz nach dem Kauf, Ende des Zeitfensters, künstliche Rabatte, Bündel-Möglichkeiten
-import { IMPORT_MARKET } from '../util/plausible.ts';
 import { db } from '../db.ts';
 import { fmtEur, round2 } from '../util/money.ts';
 import { sameShop, normShop } from '../util/shop.ts';
@@ -35,6 +34,14 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
   const rates = await sql<Rate[]>`select portal, shop, rate_percent, rate_eur, rate_text from kb_cashback_rates`;
   const stats = { products: products.length, alerts: 0 };
   const userVouchers = new Map<string, Voucher[]>();
+  // Allgemeine Shop-Aktionen (Singles Day, Black Friday …) wie einen Gutschein einrechnen – nur eindeutige (siehe
+  // isGeneralPromo), frisch gesehen und mit Obergrenze, damit ein falsch gelesener Wert keinen Fehlalarm macht
+  const shopPromos = (await sql<{ shop: string; title: string; value: number; value_type: string; min_order: number | null }[]>`
+    select shop, title, value, value_type, min_order from kb_shop_vouchers
+    where not expired and conditions = 'allgemein' and value is not null and last_seen_at > now() - interval '2 days'`)
+    .filter((v) => v.value_type === 'percent' ? Number(v.value) <= 25 : Number(v.value) <= 50)
+    .map((v): Voucher => ({ id: `promo:${v.shop}:${v.title}`, kind: 'voucher', shop: v.shop, label: `Aktion „${v.title.slice(0, 60)}“`,
+      code: null, value: Number(v.value), value_type: v.value_type, min_order: v.min_order != null ? Number(v.min_order) : null, valid_until: null }));
   const bundleCandidates = new Map<string, { voucher: Voucher; items: { product: string; name: string; offer: Offer }[] }>();
 
   for (const p of products) {
@@ -43,7 +50,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         select id, kind, shop, label, code, value, value_type, min_order, valid_until from kb_vouchers
         where user_id = ${p.user_id} and active and (valid_until is null or valid_until >= current_date)`);
     }
-    const vouchers = userVouchers.get(p.user_id)!;
+    const vouchers = [...userVouchers.get(p.user_id)!, ...shopPromos];
     // Ausschlusswörter (z. B. nach „Welches Produkt meinst du?“) auf schon gespeicherte Quellen, Angebote und Deals anwenden
     if (p.exclude_terms?.length) {
       const pats = p.exclude_terms.filter((t) => t.trim().length >= 3).map((t) => `%${t.trim()}%`);
@@ -111,8 +118,9 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     // tausenden Bewertungen bleiben drin, auch wenn ihr Schnitt mäßig ist.
     // Import-Marktplätze (AliExpress …) zählen nie als Bestpreis/Meldung: Versand aus dem Ausland, Länderversion, keine
     // deutsche Garantie (9.11.: Klipsch „USA Stock“ bei AliExpress als „Sofort zuschlagen“ gemeldet – in DE nicht lieferbar)
+    // AliExpress & Co. zählen wie jeder Shop (11.11., Wunsch Lars): Angebote aus Lagern außerhalb der EU filtert schon
+    // der Adapter („USA Stock“ …), nicht nach DE lieferbare Deals fallen über `foreign` raus
     const trusted = (e: (typeof enriched)[number]) =>
-      !IMPORT_MARKET.test(e.o.shop) &&
       !(e.o.shop_reviews != null && e.o.shop_reviews < 20) &&
       !(e.o.shop_rating != null && e.o.shop_rating < 3.5 && (e.o.shop_reviews ?? 0) < 500);
     // Mengen-Produkte (z. B. 40 Lampen): je Händler den günstigsten Einkauf aus allen Packungsgrößen berechnen;

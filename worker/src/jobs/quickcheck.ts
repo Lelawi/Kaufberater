@@ -7,7 +7,7 @@ import { billigerAdapter } from '../adapters/billiger.ts';
 import { pepperAdapters } from '../adapters/pepper.ts';
 import { matchTitle, guessModel, type ProductQuery } from '../util/match.ts';
 import type { OfferData } from '../adapters/types.ts';
-import { plausibleOffers, IMPORT_MARKET } from '../util/plausible.ts';
+import { plausibleOffers } from '../util/plausible.ts';
 import { fmtEur, parsePrice } from '../util/money.ts';
 import { createAlert } from './alerts.ts';
 import { IS_HOME } from '../adapters/registry.ts';
@@ -103,7 +103,7 @@ async function check(input: string, userId: string) {
     const deals = mydealz ? (await mydealz.search({ ...q, name: model ?? name })).filter((d) => d.price && !(d as any).foreign && (!model || strong((d as any).reason))) : [];
     const year = Date.now() - 365 * 864e5;
     // Importware-Marktplätze und unplausibel billige Deals (oft andere Variante/Fälschung) nicht als Maßstab nehmen
-    const recent = deals.filter((d) => (!d.postedAt || d.postedAt.getTime() > year) && !IMPORT_MARKET.test(d.merchant ?? '') && !IMPORT_MARKET.test(d.title))
+    const recent = deals.filter((d) => (!d.postedAt || d.postedAt.getTime() > year) )
       .filter((d) => !best || d.price! >= best * 0.55)
       .sort((a, b) => (a.price ?? 1e9) - (b.price ?? 1e9));
     if (recent[0]) dealLow = { price: recent[0].price!, merchant: recent[0].merchant ?? null, date: recent[0].postedAt?.toISOString().slice(0, 10) ?? null, url: recent[0].url };
