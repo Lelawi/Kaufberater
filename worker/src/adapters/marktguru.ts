@@ -59,7 +59,7 @@ export const marktguruAdapter: DealAdapter = {
         const brand = o.brand?.name && !/nobrand/i.test(o.brand.name) ? o.brand.name : '';
         const title = [brand, o.product?.name, o.description].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
         const r = matchTitle(q, title);
-        if (r.score < 0.7) continue;
+        if (r.score < 0.75) continue;   // 0,7 ließ Schwestervarianten durch (Review 11.11.)
         const from = o.validityDates?.map((d) => d.from).sort()[0];
         const to = o.validityDates?.map((d) => d.to).sort().pop();
         const merchant = chainName(o.advertisers?.[0]?.name ?? 'Prospekt');

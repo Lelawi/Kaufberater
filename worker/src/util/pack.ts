@@ -10,7 +10,7 @@ const WORD: Record<string, number> = {
 /** Stückzahl aus einem Titel lesen; null = nichts erkannt (dann gilt 1 bzw. der Titel der Quelle) */
 export function packSize(title: string | null | undefined): number | null {
   if (!title) return null;
-  const t = title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss')
+  let t = title.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ß/g, 'ss')
     .replace(/fünf/g, 'fuenf').replace(/zwölf/g, 'zwoelf')
     .replace(/\+\s*\d{1,2}\s*x\s*[a-z][^+|,]*/g, ' ');   // Beigaben („+ 2x xboom Buds“) zählen nicht
   const ok = (n: number) => (Number.isInteger(n) && n >= 1 && n <= 500 ? n : null);
@@ -28,10 +28,12 @@ export function packSize(title: string | null | undefined): number | null {
   if ((m = t.match(/\b(\d{1,2})p\b(?!\s*(?:\d|ip))/))) return ok(+m[1]);
   // Pack of 4 / Packung mit 4 / Set mit 3 / Set of 3
   if ((m = t.match(/\b(?:pack|packung|set|box)\s+(?:of|mit|à|a|x)\s+(\d{1,3})\b/))) return ok(+m[1]);
-  // 3 Stück, 3 Stk., 3 St., 1 St
-  if ((m = t.match(/\b(\d{1,3})\s*(?:stuck|stueck|stk|st)\b\.?/))) return ok(+m[1]);
-  // SET 3x …, 3x GU10, 3x350lm, 2x 4,7W, (… 3x) – aber nicht Maße wie 5x5.5x5 cm
-  if ((m = t.match(/\b(\d{1,3})\s*x\s*(?!hdmi|usb|lan|sata|pci|thunderbolt|displayport|dp\b|ethernet|rj|xlr|kern|core|zoom|optisch|digital|gb|tb|mb|ghz|mhz)(?=gu\d|e\d{2}|[a-z]|\d+(?:[.,]\d+)?\s*(?:lm|w|watt|lumen)\b)/)) && !/\d\s*x\s*\d+(?:[.,]\d+)?\s*x/.test(t)) return ok(+m[1]);
+  // 3 Stück, 3 Stk., 3 St., 1 St – nicht „inkl. 2 St. Ohrpolster“, „bis zu 10 St.“, „(10 St. verfügbar)“, „16 St. Szenen“
+  if ((m = t.match(/(?<!(?:inkl\.?|inklusive|mit|bis zu|max\.?)\s*)\b(\d{1,3})\s*(?:stuck|stueck|stk|st)\b\.?(?!\.?\s*(?:verfugbar|verfuegbar|auf lager|lagernd|szenen|ohrpolster|batterie|akku))/))) return ok(+m[1]);
+  // SET 3x …, 3x GU10, 3x350lm, 2x 4,7W, (… 3x) – aber nicht Maße wie 5x5.5x5 cm und nicht Beigaben/Eigenschaften
+  // („inkl. 2x AA Batterien“, „2 x heller“, „8x Lichtszenen“, „ersetzt 2x 50W“, „2x Bluetooth“) – Review 11.11.
+  if (/(?:inkl\.?|inklusive|mit|ersetzt|bis zu)\s*\d{1,3}\s*x\b/.test(t)) t = t.replace(/(?:inkl\.?|inklusive|mit|ersetzt|bis zu)\s*\d{1,3}\s*x\s*[^,;|()]*/g, ' ');
+  if ((m = t.match(/\b(\d{1,3})\s*x\s*(?!heller|lichtszenen|szenen|bluetooth|zigbee|wlan|wifi|aa\b|aaa\b|batterie|akku|schneller|leiser|starker|staerker|hdmi|usb|lan|sata|pci|thunderbolt|displayport|dp\b|ethernet|rj|xlr|kern|core|zoom|optisch|digital|gb|tb|mb|ghz|mhz)(?=gu\d|e\d{2}|[a-z]|\d+(?:[.,]\d+)?\s*(?:lm|w|watt|lumen)\b)/)) && !/\d\s*x\s*\d+(?:[.,]\d+)?\s*x/.test(t)) return ok(+m[1]);
   if ((m = t.match(/[\s,(](\d{1,3})\s*x\s*[)\]]/))) return ok(+m[1]);
   if ((m = t.match(/^\s*(?:\[[^\]]*\]\s*)?(\d{1,3})\s*x\s+[a-z]/))) return ok(+m[1]);
   // 4 Stück / 4 Stk am Ende schon oben; „3 Essential GU10 … Lampen“ in Starter-Sets bleibt unerkannt (Set mit Bridge, nicht vergleichbar)

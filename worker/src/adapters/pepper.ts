@@ -82,7 +82,7 @@ function makeAdapter(portal: Portal): DealAdapter {
         const p = await fetchPage(`https://${portal.host}/search?q=${encodeURIComponent(term)}`, { country: portal.country, minDelayMs: 4000 });
         for (const d of parsePepperList(p.text, portal)) {
           const r = matchTitle(q, d.title);
-          if (r.score < 0.7) continue;
+          if (r.score < 0.75) continue;   // 0,7 ließ Schwestervarianten durch (Review 11.11.)
           if (!shipsToDE(portal.country, d.merchant, d.title)) (d as any).foreign = true;
           found.set(d.externalId, { ...d, score: r.score, reason: r.reason });
         }

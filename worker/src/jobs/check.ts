@@ -111,6 +111,9 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
                    active = ${isBlock} or error_count + 1 < 20
                  where id = ${l.id}`;
         if ((e as any).status === 404) await sql`update kb_listings set active = false where id = ${l.id}`;
+        // Deaktiviert (404 oder 20 Fehler) → seine Angebote gelten nicht mehr (sonst blieben sie „lieferbar“)
+        await sql`update kb_offers set gone = true where listing_id = ${l.id} and not gone
+                  and exists (select 1 from kb_listings where id = ${l.id} and not active)`;
         await recordSourceResult(sourceKey, false, msg, { block: sourceBlocked });
         if ((e as any).body !== undefined && (isBlock || !debugged.has(sourceKey))) {
           const be = e as any;

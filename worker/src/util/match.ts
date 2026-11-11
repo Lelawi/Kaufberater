@@ -56,6 +56,11 @@ const FIXTURE = ['leuchte', 'deckenleuchte', 'pendelleuchte', 'stehleuchte', 'ti
   'erweiterungsspot', 'strahler', 'lichtleiste', 'buckram', 'pillar', 'adore', 'runner', 'centris', 'argenta', 'fugato', 'xamento', 'milliskin',
   'centura', 'lily', 'ensis', 'signe', 'flourish', 'devote', 'being', 'enrave', 'still'];
 const VARIANT_WORDS = ['pro', 'max', 'plus', 'ultra', 'mini', 'lite', 'se', 'fe', 'neo', 'air', 'xl', 'slim', 'edge'];
+/** Serien-/Ausstattungswörter: steht eins im Titel, aber nicht im Produktnamen, ist es eine andere (oft günstigere)
+ *  Variante – „Hue Essential …“, „White & Color …“ statt „White Ambiance“, Starter-Set mit Bridge (Review 11.11.) */
+const SERIES_WORDS = ['essential', 'color', 'colour', 'lightstrip', 'gradient', 'filament', 'starter', 'bridge'];
+/** Fehlt eins dieser Wörter aus dem Namen im Titel, ist es ebenfalls eine andere Variante („Hue White“ ≠ „White Ambiance“) */
+const KEY_NAME_WORDS = ['ambiance', 'ambience'];
 
 /** Reine Zahl mit weniger als 6 Ziffern („1700“) – kommt in vielen fremden Titeln vor (LGA1700, 1700 W, 2700 K) */
 export function weakKey(k: string): boolean {
@@ -78,10 +83,19 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   // Zubehör-Wort zählt nur, wenn es vor der Modellnummer steht („Wandhalterung für OLED77G6“) –
   // in der Ausstattungsliste dahinter („OLED77G67LW, 195 cm, Wandhalterung“) ist es kein Zubehör-Artikel
   const keyPos = (() => { const T = title.toUpperCase().replace(/[^A-Z0-9]/g, ''); const ps = modelKeys(p).map((k) => T.indexOf(k)).filter((i) => i >= 0); return ps.length ? Math.min(...ps) : -1; })();
+  // Abschnitt des Titels mit der Modellnummer (bis zum nächsten Komma/Klammer): Zubehörwort direkt dahinter
+  // („Sony WH-1000XM6 Ohrpolster Ersatz“) ist ein Zubehör-Artikel; erst in der Ausstattungsliste nach dem Komma nicht
+  // (Review 11.11.: Ohrpolster/Case/Ladekabel bekamen 0,92 wie das Produkt selbst)
+  const modelSeg = title.split(/[,;|()[\]]/).find((seg) => {
+    const S = seg.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return modelKeys(p).some((k) => S.includes(k));
+  });
+  const modelSegWords = new Set(words(modelSeg));
   const accBeforeModel = (a: string) => {
     if (keyPos < 0) return true;
     const T = norm(title); const i = T.indexOf(norm(a));
-    return i >= 0 && i < keyPos;
+    if (i >= 0 && i < keyPos) return true;
+    return modelSegWords.has(a);
   };
   const acc = ACCESSORY.find((a) => tw.has(a) && !pw.has(a) && accBeforeModel(a));
   const forPattern = /\b(für|fur|for|pour|para|per)\b/i.test(title) && !/\b(für|for|pour)\b/i.test(p.name);
@@ -143,9 +157,9 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   const hits = nameWords.filter((w) => tw.has(w) || (!/^\d+$/.test(w) && norm(w).length >= 3 && nt.includes(norm(w))));
   let score = hits.length / nameWords.length;
   // Fehlt ein Wort, das eine Variante kennzeichnet („+M“/Matter, Pro, Max …), ist es ein anderes Produkt
-  const missingVariant = nameWords.filter((w) => (VARIANT_WORDS.includes(w) || w === '+m' || w === 'matter') && !hits.includes(w));
+  const missingVariant = nameWords.filter((w) => (VARIANT_WORDS.includes(w) || KEY_NAME_WORDS.includes(w) || w === '+m' || w === 'matter') && !hits.includes(w));
   if (missingVariant.length) score *= 0.6;
-  const extraVariant = VARIANT_WORDS.filter((v) => tw.has(v) && !pw.has(v));
+  const extraVariant = [...VARIANT_WORDS, ...SERIES_WORDS].filter((v) => tw.has(v) && !pw.has(v));
   if (extraVariant.length) score *= 0.35;
   if (p.brand && !nt.includes(norm(p.brand)) && !(extra.brand && norm(extra.brand) === norm(p.brand))) score *= 0.7;
   const reason = `${hits.length}/${nameWords.length} Namensteile` + (extraVariant.length ? `, andere Variante (${extraVariant.join(',')})` : '') + penaltyReason;

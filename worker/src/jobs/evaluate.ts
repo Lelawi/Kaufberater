@@ -8,6 +8,13 @@ import { cheapestBasket, basketText, type Basket } from '../util/pack.ts';
 import { createAlert } from './alerts.ts';
 import type { ProductRow } from '../products.ts';
 
+/** Stufen aufsteigend – für „gleich gute oder bessere Meldung schon da?“ */
+const LEVEL_ORDER = ['good', 'top', 'instant'];
+/** Marktplätze: je Angebot ein anderer Verkäufer – Angebote nie zu einer Bestellung zusammenfassen */
+const MARKETPLACE = /^(ebay|kleinanzeigen|rakuten|kaufland|real|otto-marktplatz|amazon-marktplatz)/i;
+/** „2026-11“ (Berlin) – Teil der Dedup-Schlüssel */
+const monthKey = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }).slice(0, 7);
+
 interface Offer {
   shop_rating?: number | null; shop_reviews?: number | null;
   id: string; product_id: string; source: string; shop: string; country: string; condition: string; url: string | null;
@@ -69,6 +76,9 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     const offers = await sql<Offer[]>`
       select id, product_id, source, shop, country, condition, url, price, shipping, total, list_price, in_stock, title, shop_rating, shop_reviews, pack_size
       from kb_offers where product_id = ${p.id} and not gone and coalesce(in_stock, true)
+        -- nur kürzlich bestätigte Preise (Review 11.11.): Quelle gesperrt/Listing deaktiviert → Angebot blieb sonst
+        -- wochenlang „lieferbar“ und konnte Bestpreis bleiben oder Alarme auslösen
+        and last_seen_at > now() - interval '48 hours'
         and listing_id not in (select id from kb_listings where product_id = ${p.id} and rejected)
         and (disputed_total is null or disputed_total <> total) -- vom Nutzer als falsch gemeldeter Preis (bis er sich ändert)
       `;
@@ -84,8 +94,18 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     }
 
     // 2) Bestpreise
-    const newOnes = enriched.filter((e) => e.o.condition === 'new').sort((a, b) => a.eff - b.eff);
-    const refurb = enriched.filter((e) => e.o.condition !== 'new').sort((a, b) => a.eff - b.eff);
+    // Ausreißer (Review 11.11.): Zubehör mit Modellnummer im Titel („WH-1000XM6 Ohrpolster“) oder falsch erkannte
+    // Packungsgröße („inkl. 2x AA Batterien“) ergaben absurd niedrige Stückpreise → „Sofort zuschlagen“.
+    // Ab 3 Angeboten zählt nichts unter 40 % des Medians (pro Stück).
+    const unitOf = (e: (typeof enriched)[number]) => e.eff / Math.max(1, Number(e.o.pack_size ?? 1));
+    const sane = (list: typeof enriched) => {
+      if (list.length < 3) return list;
+      const u = list.map(unitOf).sort((a, b) => a - b);
+      const median = u[Math.floor(u.length / 2)];
+      return list.filter((e) => unitOf(e) >= median * 0.4);
+    };
+    const newOnes = sane(enriched.filter((e) => e.o.condition === 'new')).sort((a, b) => a.eff - b.eff);
+    const refurb = sane(enriched.filter((e) => e.o.condition !== 'new')).sort((a, b) => a.eff - b.eff);
     // Für Bestpreis und Meldungen nur Händler mit ordentlichen Bewertungen (unbekannte Bewertung zählt als ok)
     // Unsicher = kaum Bewertungen (< 20) oder schlecht bewertet bei wenigen Bewertungen. Große Ketten mit
     // tausenden Bewertungen bleiben drin, auch wenn ihr Schnitt mäßig ist.
@@ -102,11 +122,19 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     const pickBest = (list: typeof enriched): Cand | undefined => {
       const ok = list.filter(trusted);
       if (!multi) { const e = ok[0]; return e ? { ...e, sum: e.eff } : undefined; }
+      // Gruppe = eine Bestellung: Händler + Land. Marktplätze (eBay …) haben je Angebot einen anderen Verkäufer →
+      // nie mit anderen Angeboten kombinieren, Versand je Packung (Review 11.11.: 13× dasselbe eBay-3er mit einmal Versand)
       const byShop = new Map<string, typeof enriched>();
-      for (const e of ok) { const k = normShop(e.o.shop) || e.o.shop; byShop.set(k, [...(byShop.get(k) ?? []), e]); }
+      for (const e of ok) {
+        const s = normShop(e.o.shop) || e.o.shop;
+        const k = MARKETPLACE.test(s) ? `${s}|${e.o.id}` : `${s}|${e.o.country ?? 'DE'}`;
+        byShop.set(k, [...(byShop.get(k) ?? []), e]);
+      }
       let bestC: Cand | undefined;
       for (const group of byShop.values()) {
-        const b = cheapestBasket(group.map((e) => ({ id: e.o.id, shop: e.o.shop, pack: Number(e.o.pack_size ?? 1), price: Number(e.o.price), shipping: e.o.shipping })), quantity);
+        const market = MARKETPLACE.test(normShop(group[0].o.shop) || group[0].o.shop);
+        const b = cheapestBasket(group.map((e) => ({ id: e.o.id, shop: e.o.shop, pack: Number(e.o.pack_size ?? 1),
+          price: Number(e.o.price) + (market ? Number(e.o.shipping ?? 0) : 0), shipping: market ? 0 : e.o.shipping })), quantity);
         if (!b) continue;
         const main = group.find((e) => e.o.id === b.items[0].id)!;
         // Gutscheine/Cashback auf die ganze Bestellung (nicht je Packung)
@@ -165,10 +193,15 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       const [level] = hit;
       // nicht erneut melden, wenn in den letzten 7 Tagen schon ein gleich guter/besserer Preis gemeldet wurde
       // (sonst kommt nach einem Tag dieselbe oder sogar eine schlechtere Meldung noch einmal)
+      // Bei Mengen auf Cent genau (16,40 → 16,00 €/Stück macht bei 39 Stück ~16 € aus), sonst auf ganze Euro.
+      // Eine höhere Stufe kommt trotz Sperre durch (Review 11.11.: „gut“ gemeldet, danach „sehr gut“ verschluckt).
+      const priceKey = multi ? cand.eff.toFixed(2) : String(Math.floor(cand.eff));
+      const sameOrHigher = LEVEL_ORDER.slice(LEVEL_ORDER.indexOf(level));
       const recent = await sql`select 1 from kb_alerts where product_id = ${p.id} and kind = 'threshold'
         and created_at > now() - interval '7 days'
         and dedup_key like ${`thr:${p.id}:${isRefurb ? 'r' : 'n'}:%`}
-        and split_part(dedup_key, ':', 5)::numeric <= ${Math.floor(cand.eff)} limit 1`;
+        and split_part(dedup_key, ':', 4) in ${sql(sameOrHigher)}
+        and split_part(dedup_key, ':', 5)::numeric <= ${Number(priceKey)} limit 1`;
       if (recent.length) continue;
       stats.alerts += await createAlert({
         userId: p.user_id, productId: p.id, kind: 'threshold', level: level as any,
@@ -180,7 +213,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
           : `Bei ${where(cand)}: ${fmtEur(cand.o.total)}` + (cand.notes ? `, nach ${cand.notes} effektiv ${fmtEur(cand.eff)}` : '')) +
           (p.lowest_seen ? `. Bisher günstigster beobachteter Preis: ${fmtEur(p.lowest_seen)}${perPiece}.` : '.') +
           (fakeNote && !isRefurb ? ` ${fakeNote}` : ''),
-        url: cand.o.url, dedupKey: `thr:${p.id}:${isRefurb ? 'r' : 'n'}:${level}:${Math.floor(cand.eff)}`,
+        // Monat im Schlüssel: derselbe Preis später wieder (Black Week → Weihnachten) wird erneut gemeldet
+        url: cand.o.url, dedupKey: `thr:${p.id}:${isRefurb ? 'r' : 'n'}:${level}:${priceKey}:${monthKey()}`,
       });
     }
 
@@ -193,7 +227,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
           userId: p.user_id, productId: p.id, kind: 'threshold', level: 'instant',
           title: `Dein Wunschpreis ist erreicht: ${p.name}${isRefurb ? ' (Refurbished)' : ''} für ${fmtEur(cand.sum)}${multi ? ` (${quantity} Stück)` : ''}`,
           body: `Bei ${where(cand)}${cand.basket ? `: ${basketText(cand.basket)}` : ''}. Dein Höchstpreis: ${fmtEur(p.max_price)}.` + (cand.notes ? ` Effektiv nach ${cand.notes}.` : ''),
-          url: cand.o.url, dedupKey: `max:${p.id}:${isRefurb ? 'r' : 'n'}:${Math.floor(cand.sum / 10)}`,
+          url: cand.o.url, dedupKey: `max:${p.id}:${isRefurb ? 'r' : 'n'}:${Math.floor(cand.sum / 10)}:${monthKey()}`,
         });
       }
     }
@@ -204,7 +238,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         userId: p.user_id, productId: p.id, kind: 'threshold', level: 'good',
         title: `Neuer Tiefstpreis: ${p.name} für ${fmtEur(best.eff)}${perPiece}`,
         body: `Bei ${best.o.shop}. Bisheriges Minimum seit Beobachtung: ${fmtEur(prevLowest)}.`,
-        url: best.o.url, dedupKey: `low:${p.id}:${Math.floor(best.eff)}`,
+        url: best.o.url, dedupKey: `low:${p.id}:${Math.floor(best.eff)}:${monthKey()}`,
       });
     }
 

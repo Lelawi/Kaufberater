@@ -38,7 +38,9 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
         const importWare = IMPORT_MARKET.test(d.merchant ?? '') || IMPORT_MARKET.test(d.title);
         const pack = packSize(d.title) ?? 1;
         // Mengen-Produkte: Deal-Preis pro Stück vergleichen (Schwellen und Bestpreis gelten dann pro Stück)
-        const cmp: number | null = d.price ? (multi ? Math.round(d.price / pack * 100) / 100 : d.price) : null;
+        // „(eff. 9,90 €/Stück)“ ist schon ein Stückpreis – nicht noch einmal durch die Packung teilen (Review 11.11.)
+        const perPieceInTitle = /\beff[^)\]]*\/\s*(?:st(?:ü|ue)ck|stk)/i.test(d.title);
+        const cmp: number | null = d.price ? (multi && !perPieceInTitle ? Math.round(d.price / pack * 100) / 100 : d.price) : null;
         // Sets mit Zubehör (Starter-Set mit Bridge, „+ Dimmschalter“ …) sind kein Preis für das Produkt allein
         const bundle = BUNDLE.test(d.title) && !BUNDLE.test(p.name);
         const notes = d.foreign ? `Händler in ${ad.country} – Lieferung nach DE prüfen` : importWare ? 'Marktplatz/Import – Garantie und Länderversion prüfen'
@@ -72,8 +74,10 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
               : cmp && p.threshold_top && cmp <= p.threshold_top ? 'top'
               // „gut“ nur, wenn die Schwelle wirklich erreicht ist – sonst nur Info (keine Push-Nachricht)
               : cmp && p.threshold_good && cmp <= p.threshold_good ? 'good' : 'info';
+            // Import-Marktplätze (AliExpress/Temu) nie als Kaufsignal – in der Bewertung schon gesperrt, hier fehlte es
+            const finalLevel = importWare ? 'info' : level;
             stats.alerts += await createAlert({
-              userId: p.user_id, productId: p.id, kind: 'deal', level,
+              userId: p.user_id, productId: p.id, kind: 'deal', level: finalLevel,
               title: `${ad.label}-Deal: ${p.name}${d.price ? ' für ' + fmtEur(d.price) : ''}${multi && pack > 1 && cmp ? ` (${pack} Stück, ${fmtEur(cmp)}/Stück)` : ''}`,
               body: `${d.title}${d.merchant ? ' – bei ' + d.merchant : ''}${d.temperature !== null ? ` (${Math.round(d.temperature)}°)` : ''}` +
                 (d.voucherCode ? ` Gutscheincode: ${d.voucherCode}` : '') +

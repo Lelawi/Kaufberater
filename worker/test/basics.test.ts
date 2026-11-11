@@ -176,3 +176,16 @@ test('Zubehör-Wort in der Ausstattung ist kein Zubehör-Artikel', () => {
   assert.ok(matchTitle(q, 'LG OLED77G67LW.AEUD, OLED-Fernseher 195 cm (77 Zoll), Wandhalterung, 120Hz Panel').score >= 0.9);
   assert.ok(matchTitle(q, 'Wandhalterung für LG OLED77G6 schwenkbar').score < 0.5);
 });
+
+// Review 11.11.: Zubehör direkt hinter der Modellnummer und Schwestervarianten dürfen nicht als das Produkt gelten
+import { matchTitle as mt } from '../src/util/match.ts';
+test('Zubehör und andere Varianten abwerten', () => {
+  const sony: any = { name: 'Sony WH-1000XM6', model: 'WH-1000XM6', brand: 'Sony' };
+  const hue: any = { name: 'Philips Hue White Ambiance GU10', model: null, brand: 'Philips' };
+  assert.ok(mt(sony, 'Sony WH-1000XM6 Ohrpolster Ersatz schwarz').score < 0.75);
+  assert.ok(mt(sony, 'Sony WH-1000XM6, Bluetooth, Noise Cancelling, inkl. Case').score >= 0.75);
+  assert.ok(mt(hue, 'Philips Hue Essential White Ambiance GU10 3er Pack').score < 0.75);
+  assert.ok(mt(hue, 'Philips Hue White & Color Ambiance GU10 Doppelpack').score < 0.75);
+  assert.ok(mt(hue, 'Philips Hue White GU10 LED Spot 3er Pack').score < 0.75);
+  assert.ok(mt(hue, 'Philips Hue White Ambiance GU10 3er-Pack').score >= 0.75);
+});

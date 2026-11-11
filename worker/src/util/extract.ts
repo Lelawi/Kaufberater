@@ -121,7 +121,8 @@ export function productFromJsonLd(html: string): ProductInfo | null {
         }
       }
     }
-    info.price = price;
+    // Nur Euro: 849 USD wurden sonst als 849 € gespeichert (Review 11.11.)
+    info.price = info.currency && info.currency.toUpperCase() !== 'EUR' ? null : price;
     if (!best || (info.price && !best.price)) best = info;
   }
   return best;
@@ -133,7 +134,7 @@ export function productFromMeta(html: string): ProductInfo {
   const meta = (k: string) => $(`meta[property="${k}"]`).attr('content') ?? $(`meta[name="${k}"]`).attr('content');
   return {
     title: meta('og:title') ?? ($('h1').first().text().trim() || undefined),
-    price: parsePrice(meta('product:price:amount') ?? meta('og:price:amount') ?? $('[itemprop="price"]').first().attr('content') ?? $('[itemprop="price"]').first().text()),
+    price: (meta('product:price:currency') ?? 'EUR').toUpperCase() !== 'EUR' ? null : parsePrice(meta('product:price:amount') ?? meta('og:price:amount') ?? $('[itemprop="price"]').first().attr('content') ?? $('[itemprop="price"]').first().text()),
     currency: meta('product:price:currency') ?? 'EUR',
     image: meta('og:image'),
     inStock: availabilityFrom(meta('product:availability') ?? $('[itemprop="availability"]').first().attr('href') ?? $('[itemprop="availability"]').first().attr('content')),
