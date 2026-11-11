@@ -24,6 +24,10 @@ export function minOrderOf(text: string): number | null {
  *  Nicht: „bis zu …“, Cashback, Newsletter/Neukunden/Club/App, Versand, nur für bestimmte Marken/Kategorien. */
 export function isGeneralPromo(title: string): boolean {
   if (!/(\d+(?:[.,]\d+)?)\s*(?:%|€|euro)/i.test(title)) return false;
+  // Nur, was ausdrücklich für den ganzen Einkauf gilt (11.11.: Ausschlussliste allein ließ „Trockner von Miele 15 %“,
+  // „Baby-Wunschliste 15 %“, „Black Weeks 50 € extra mit Rabattcode“ durch → Fehlalarme in Serie)
+  if (!/direktabzug|warenkorbrabatt|auf (?:alles|fast alles|nahezu alles|das (?:gesamte |komplette )?(?:[\w-]+-)?sortiment|(?:deine|ihre|die) (?:gesamte )?bestellung|den (?:gesamten )?warenkorb)|\bab \d{2,4}\s*(?:€|euro)\s*(?:einkaufswert|bestellwert|warenwert|mbw)/i.test(title)) return false;
+  if (/ausgewählt|teilnehmend|wunschliste|geschenkgutschein|gutscheinkarte|digitaler gutschein|haul|marketplace|marktplatz|vorbestell|abo\b/i.test(title)) return false;
   if (/bis zu|cashback|newsletter|neukunde|erstbestellung|erste bestellung|registrier|club|\bapp\b|mitglied|student|versand|payback|punkte|gewinn|rezension|bewertung|sammle|outlet|refurbished|trade-?in|eintausch|altgerät/i.test(title)) return false;
   // „… im LG TV Set“, „… für Heimkinosysteme“, „… beim Kauf von …“ → nur für bestimmte Produkte
   if (/\b(?:für|im|beim|zum kauf|auf ausgewählte)\s+(?!(?:alles|den einkauf|deinen einkauf|die bestellung|deine bestellung)\b)[A-ZÄÖÜa-zäöü]/.test(title.replace(/\bzum singles ?days?\b/i, ''))) return false;

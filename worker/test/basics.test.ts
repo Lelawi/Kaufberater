@@ -200,5 +200,10 @@ test('Allgemeine Shop-Aktionen', () => {
   for (const t of ['Energiespartage: Bis zu 50% Rabatt auf Deine Bestellung', '10€ tink Rabattcode auf das Philips Hue Sortiment erhalten',
     '10€ Gutschein & Gratis-Versand im Club sichern!', 'Sichere Dir 400€ Direktabzug im LG TV und Soundbar Set',
     'Zahle sogar 50% weniger für Heimkinosysteme', 'Rezension verfassen und 100€ SATURN Coupon ergattern',
-    '15-Euro-Gutschein auf das gesamte tink-Sortiment (Newsletter aktivieren) 200 EUR MBW']) assert.ok(!isGeneralPromo(t), t);
+    '15-Euro-Gutschein auf das gesamte tink-Sortiment (Newsletter aktivieren) 200 EUR MBW',
+    // Fehlalarme vom 11.11. (alle als „allgemein“ eingerechnet)
+    'Black Weeks: 50€ extra mit notebooksbilliger Rabattcode', 'Trockner von Miele jetzt 15% günstiger schnappen',
+    'Artikel aus der Baby-Wunschliste mit 15% Amazon Code kaufen', 'eBay 20% Singles Day Gutschein, ausgewählte Artikel - 2x ein',
+    'Kaufe cyberport Geschenkgutscheine ab 25€', '[Amazon Haul] 11€ Rabatt bei 25€ MBW am 11.11.',
+    'Digitaler Gutschein von GALAXUS schon ab 10€', 'Verkaufe einen Artikel & hol dir 10 €']) assert.ok(!isGeneralPromo(t), t);
 });

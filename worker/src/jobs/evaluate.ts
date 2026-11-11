@@ -198,7 +198,9 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       if (p.max_price && cand.sum <= p.max_price) continue;
       const hit = levels.find(([, t]) => t !== null && cand.eff <= (isRefurb ? t! * 0.9 : t!));
       if (!hit) continue;
-      const [level] = hit;
+      // Preis nur dank Shop-Aktion erreicht → höchstens „Top-Preis“: Aktionen haben oft Bedingungen, die wir nicht sehen
+      const viaPromo = /Aktion „/.test(cand.notes ?? '');
+      const level = viaPromo && hit[0] === 'instant' ? 'top' : hit[0];
       // nicht erneut melden, wenn in den letzten 7 Tagen schon ein gleich guter/besserer Preis gemeldet wurde
       // (sonst kommt nach einem Tag dieselbe oder sogar eine schlechtere Meldung noch einmal)
       // Bei Mengen auf Cent genau (16,40 → 16,00 €/Stück macht bei 39 Stück ~16 € aus), sonst auf ganze Euro.
