@@ -41,7 +41,13 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
         // Mengen-Produkte: Deal-Preis pro Stück vergleichen (Schwellen und Bestpreis gelten dann pro Stück)
         // „(eff. 9,90 €/Stück)“ ist schon ein Stückpreis – nicht noch einmal durch die Packung teilen (Review 11.11.)
         const perPieceInTitle = /\beff[^)\]]*\/\s*(?:st(?:ü|ue)ck|stk)/i.test(d.title);
-        const cmp: number | null = d.price ? (multi && !perPieceInTitle ? Math.round(d.price / pack * 100) / 100 : d.price) : null;
+        // Mengen-Produkte: was die BENÖTIGTE Menge mit diesem Deal kostet – nur ganze Packungen, Überschuss zählt mit
+        // (11.11.: 5er-Pack für 229 € bei Bedarf 3 als „45,80 €/Stück, sofort zuschlagen“ gemeldet; für 3 Stück zahlt man 229 €)
+        const need = Math.max(1, Number(p.quantity ?? 1));
+        const packPrice: number | null = d.price ? (perPieceInTitle ? d.price * pack : d.price) : null;
+        const packsNeeded = multi ? Math.ceil(need / pack) : 1;
+        const totalForNeed: number | null = packPrice !== null ? Math.round(packPrice * packsNeeded * 100) / 100 : null;
+        const cmp: number | null = d.price ? (multi ? Math.round((totalForNeed ?? 0) / need * 100) / 100 : d.price) : null;
         // Sets mit Zubehör (Starter-Set mit Bridge, „+ Dimmschalter“ …) sind kein Preis für das Produkt allein
         const bundle = BUNDLE.test(d.title) && !BUNDLE.test(p.name);
         const notes = d.foreign ? `Händler in ${ad.country} – Lieferung nach DE prüfen` : importWare ? 'Versand aus dem Ausland – Lieferzeit prüfen'
@@ -78,7 +84,10 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
             const finalLevel = level;
             stats.alerts += await createAlert({
               userId: p.user_id, productId: p.id, kind: 'deal', level: finalLevel,
-              title: `${ad.label}-Deal: ${p.name}${d.price ? ' für ' + fmtEur(d.price) : ''}${multi && pack > 1 && cmp ? ` (${pack} Stück, ${fmtEur(cmp)}/Stück)` : ''}`,
+              title: multi && totalForNeed !== null && cmp
+                ? `${ad.label}-Deal: ${p.name} – ${need} Stück für ${fmtEur(totalForNeed)} (${fmtEur(cmp)}/Stück` +
+                  `${pack > 1 ? `, ${packsNeeded > 1 ? `${packsNeeded}× ` : ''}${pack}er-Pack` : ''}${packsNeeded * pack > need ? `, du bekommst ${packsNeeded * pack}` : ''})`
+                : `${ad.label}-Deal: ${p.name}${d.price ? ' für ' + fmtEur(d.price) : ''}`,
               body: `${d.title}${d.merchant ? ' – bei ' + d.merchant : ''}${d.temperature !== null ? ` (${Math.round(d.temperature)}°)` : ''}` +
                 (d.voucherCode ? ` Gutscheincode: ${d.voucherCode}` : '') +
                 (importWare ? ' Versand evtl. aus dem Ausland – Lieferzeit prüfen.' : '') +
