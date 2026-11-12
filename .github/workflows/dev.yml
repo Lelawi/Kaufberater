@@ -34,12 +34,4 @@ jobs:
       - name: Abhängigkeiten für Entwicklung bereitstellen
         if: inputs.cmd == 'deps'
         run: mkdir -p dumps && tar czf dumps/node_modules.tgz node_modules
-      - name: Rohdaten in Branch 'dumps' schieben
-        if: always()
-        run: |
-          [ -d dumps ] || exit 0
-          cd dumps
-          git init -q -b dumps
-          git config user.name "kaufberater-bot"; git config user.email "bot@users.noreply.github.com"
-          git add -A && git commit -qm "dumps ${{ github.run_id }}"
-          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" dumps:dumps
+      # Rohdaten NICHT mehr in einen Branch schieben: Repo ist öffentlich (Freiminuten), die Seiten verraten die Produkte.

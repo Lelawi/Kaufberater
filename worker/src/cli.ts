@@ -98,8 +98,8 @@ async function main() {
                               from kb_runs where kind like 'run:%:github' and started_at >= date_trunc('month', now())`;
         const dayOfMonth = new Date().getUTCDate();
         const projected = (u.min / Math.max(1, dayOfMonth)) * 31;
-        // Ab ~1.700 Minuten Hochrechnung: nur noch jede zweite Stunde (GitHub stoppt sonst bei 2.000)
-        const thin = projected > 1700 && new Date().getUTCHours() % 2 === 1;
+        // Repo ist seit 12.11.2026 öffentlich → unbegrenzte Freiminuten, kein Ausdünnen mehr (nur bei privatem Repo: KB_THIN=1)
+        const thin = process.env.KB_THIN === '1' && projected > 1700 && new Date().getUTCHours() % 2 === 1;
         const skip = r.length > 0 || thin;
         const { appendFileSync } = await import('node:fs');
         if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `skip=${skip}\n`);
