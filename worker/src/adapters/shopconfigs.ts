@@ -1,6 +1,6 @@
 // Shops mit eigener Suche, die von GitHub aus erreichbar sind (geprüft am 21.10.2026). Alle liefern nach Deutschland.
 import { loadHtml, absUrl, extractProduct, embeddedJson } from '../util/extract.ts';
-import { fetchPage } from '../util/http.ts';
+import { fetchPage, setCookie } from '../util/http.ts';
 import { parsePrice } from '../util/money.ts';
 import { cleanText, conditionFromTitle } from './common.ts';
 import { makeSearchShop, hitsFromJsonLd, noPriceError, type SearchHit, type SearchShopConfig } from './searchshops.ts';
@@ -184,6 +184,9 @@ export function aliexpressHits(html: string): (SearchHit & { freeShipping?: bool
     };
   });
 }
+// Als Kunde in Deutschland anfragen (GitHub-Server stehen in den USA): sonst zeigt die Suche Angebote, die nur in die
+// USA liefern (16.11.: Treffer von GitHub aus, die von Deutschland aus gar nicht erscheinen)
+setCookie('de.aliexpress.com', 'aep_usuc_f', 'site=deu&c_tp=EUR&region=DE&b_locale=de_DE', true);
 const aliSearchUrl = (t: string) => `https://de.aliexpress.com/w/wholesale-${enc(t.trim().replace(/\s+/g, '-'))}.html`;
 const aliBase = makeSearchShop({
   key: 'aliexpress', label: 'AliExpress', base: 'https://de.aliexpress.com', country: 'DE', kind: 'marketplace',

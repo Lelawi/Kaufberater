@@ -73,13 +73,17 @@ function storeCookies(host: string, h: Headers) {
   for (const c of list) {
     const [pair] = c.split(';');
     const eq = pair.indexOf('=');
-    if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+    const name = pair.slice(0, eq).trim();
+    if (eq > 0 && !pinned.has(`${key}|${name}`)) jar.set(name, pair.slice(eq + 1).trim());
   }
   cookies.set(key, jar);
 }
 
-export function setCookie(host: string, name: string, value: string) {
+/** Fest gesetzte Cookies (z. B. Region) überschreibt die Seite nicht mit eigenen Set-Cookie-Werten */
+const pinned = new Set<string>();
+export function setCookie(host: string, name: string, value: string, pin = false) {
   const key = baseDomain(host);
+  if (pin) pinned.add(`${key}|${name}`);
   const jar = cookies.get(key) ?? new Map<string, string>();
   jar.set(name, value);
   cookies.set(key, jar);

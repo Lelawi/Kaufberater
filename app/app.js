@@ -349,7 +349,7 @@ async function viewProduct(id) {
   if (alertsR.data?.length) sb.from('kb_alerts').update({ read_at: new Date().toISOString() }).in('id', alertsR.data.map((a) => a.id)).then(refreshBadge);
   // Als falsch gemeldete Preise (z. B. veralteter Marktplatz-Preis auf der Zwischenseite) ausblenden, bis sich der Preis ändert
   const allOffers = offersR.data ?? [];
-  const disputed = allOffers.filter((o) => o.disputed_total != null && Number(o.disputed_total) === Number(o.total));
+  const disputed = allOffers.filter((o) => o.disputed_total != null && Number(o.total) >= Number(o.disputed_total) * 0.9);
   const offers = allOffers.filter((o) => !disputed.includes(o));
   const a = analysisR.data?.[0];
   // Nicht online kaufbar (ausverkauft oder nur im Markt) ans Ende – sie zählen auch nicht für den Bestpreis
@@ -414,7 +414,7 @@ async function viewProduct(id) {
 
   <section class="panel"><h2>Angebote Neuware <span class="muted" style="font-weight:400">${newOffers.length}</span></h2>
     ${newOffers.length ? offerTable(newOffers, false, multi) : html`<p class="muted">Noch keine.</p>`}
-    ${disputed.length ? html`<p class="hint">${disputed.length} Angebot${disputed.length === 1 ? '' : 'e'} als falsch gemeldet (${disputed.map((o) => `${o.shop} ${fmtEur(o.total)}`).join(', ')}) – ${disputed.length === 1 ? 'zählt' : 'zählen'} nicht, bis sich der Preis ändert. <button class="linklike" id="undispute">Rückgängig</button></p>` : ''}</section>
+    ${disputed.length ? html`<p class="hint">${disputed.length} Angebot${disputed.length === 1 ? '' : 'e'} als falsch gemeldet (${disputed.map((o) => `${o.shop} ${fmtEur(o.total)}`).join(', ')}) – ${disputed.length === 1 ? 'zählt' : 'zählen'} nicht, bis der Preis um mehr als 10 % fällt. <button class="linklike" id="undispute">Rückgängig</button></p>` : ''}</section>
   ${p.include_refurb ? html`<section class="panel"><h2>Refurbished, B-Ware, gebraucht <span class="muted" style="font-weight:400">${refurb.length}</span></h2>
     ${refurb.length ? offerTable(refurb, true, multi) : html`<p class="muted">Noch keine gefunden.</p>`}</section>` : ''}
 

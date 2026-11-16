@@ -90,7 +90,9 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         -- erst vor Kurzem gesehen wurde (11.11.: LG G6 bei Berlet 404, stand trotzdem als Bestpreis da)
         and listing_id not in (select id from kb_listings where product_id = ${p.id} and not active)
         and listing_id not in (select id from kb_listings where product_id = ${p.id} and rejected)
-        and (disputed_total is null or disputed_total <> total) -- vom Nutzer als falsch gemeldeter Preis (bis er sich ändert)
+        -- vom Nutzer als falsch gemeldet: bleibt draußen, bis der Preis um mehr als 10 % fällt (16.11.: 20 Cent weniger
+        -- bei einem nicht nach DE liefernden Marktplatz-Angebot hoben die Meldung auf, es war sofort wieder Bestpreis)
+        and (disputed_total is null or total < disputed_total * 0.9)
       `;
 
     // 1) Effektiver Endpreis je Angebot
