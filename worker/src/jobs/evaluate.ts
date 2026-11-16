@@ -92,7 +92,10 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         and listing_id not in (select id from kb_listings where product_id = ${p.id} and rejected)
         -- vom Nutzer als falsch gemeldet: bleibt draußen, bis der Preis um mehr als 10 % fällt (16.11.: 20 Cent weniger
         -- bei einem nicht nach DE liefernden Marktplatz-Angebot hoben die Meldung auf, es war sofort wieder Bestpreis)
-        and (disputed_total is null or total < disputed_total * 0.9)
+        -- Grund (16.11.): stock = nach 7 Tagen wieder, shipping/wrong = dauerhaft, price/leer = bis −10 %
+        and (disputed_total is null
+          or (disputed_reason = 'stock' and disputed_at < now() - interval '7 days')
+          or (coalesce(disputed_reason, 'price') = 'price' and total < disputed_total * 0.9))
       `;
 
     // 1) Effektiver Endpreis je Angebot
