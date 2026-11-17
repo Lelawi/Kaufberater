@@ -12,13 +12,14 @@ import { runTrends } from './jobs/trend.ts';
 import { runDigest } from './jobs/digest.ts';
 import { runVouchers } from './jobs/vouchers.ts';
 import { stats as httpStats } from './util/http.ts';
-import { preBlackWeekAnalysis } from './util/events.ts';
+import { preBlackWeekAnalysis, hotWindow } from './util/events.ts';
 import { packBackfill } from './jobs/packbackfill.ts';
 
 /** arg: "all" (Standard), "checks", "deals", "discovery", "quick", "product:<uuid>" */
 export async function runAll(arg = '') {
   const sql = await db();
-  const budgetMin = Number(process.env.KB_BUDGET_MINUTES ?? 12);
+  // In der heißen Phase etwas mehr Zeit je Lauf (mehr fällige Abfragen, Feed) – Takt 15 Min. bleibt einhaltbar
+  const budgetMin = Number((hotWindow() && process.env.KB_BUDGET_MINUTES_HOT) || process.env.KB_BUDGET_MINUTES || 12);
   const deadline = Date.now() + budgetMin * 60_000;
   const productId = arg.startsWith('product:') ? arg.slice(8) : undefined;
   const mode = productId ? 'product' : (arg || 'all');

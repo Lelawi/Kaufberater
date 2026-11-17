@@ -19,7 +19,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       KB_DB_PASSWORD: ${{ secrets.KB_DB_PASSWORD }}
       EBAY_APP_ID: ${{ secrets.EBAY_APP_ID }}
@@ -40,3 +40,4 @@ jobs:
         env:
           KB_RUNNER: github
           KB_BUDGET_MINUTES: '8'
+          KB_BUDGET_MINUTES_HOT: '11'   # Black Week / Singles Day (util/events.ts hotWindow)
