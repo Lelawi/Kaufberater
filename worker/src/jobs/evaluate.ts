@@ -3,7 +3,8 @@
 import { db } from '../db.ts';
 import { fmtEur, round2 } from '../util/money.ts';
 import { sameShop, normShop, exactShop } from '../util/shop.ts';
-import { isGeneralPromo, namesOtherCategory } from './vouchers.ts';
+import { isGeneralPromo, namesOtherCategory, promoValue } from './vouchers.ts';
+import { hotWindow } from '../util/events.ts';
 import { cheapestBasket, basketText, type Basket } from '../util/pack.ts';
 import { createAlert } from './alerts.ts';
 import type { ProductRow } from '../products.ts';
@@ -37,12 +38,17 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
   const userVouchers = new Map<string, Voucher[]>();
   // Allgemeine Shop-Aktionen (Singles Day, Black Friday …) wie einen Gutschein einrechnen – nur eindeutige (siehe
   // isGeneralPromo), frisch gesehen und mit Obergrenze, damit ein falsch gelesener Wert keinen Fehlalarm macht
+  // Gültig: nicht abgelaufen, nicht über „gültig bis“ (Posting-Tag bzw. Datum im Titel) hinaus und vom letzten
+  // Gutschein-Lauf noch gesehen (normal alle 8 Std., in der heißen Phase alle 2,5 Std.) – vorher galten sie 2 Tage
+  const seenWithin = hotWindow() ? '6 hours' : '26 hours';
   const shopPromos = (await sql<{ shop: string; title: string; value: number; value_type: string; min_order: number | null }[]>`
     select shop, title, value, value_type, min_order from kb_shop_vouchers
-    where not expired and conditions = 'allgemein' and value is not null and last_seen_at > now() - interval '2 days'`)
-    .filter((v) => v.value_type === 'percent' ? Number(v.value) <= 25 : Number(v.value) <= 50)
-    // gespeicherte Aktionen mit den aktuellen Regeln erneut prüfen (z. B. Abteilungs-Aktionen, die früher durchrutschten)
+    where not expired and conditions = 'allgemein' and value is not null and last_seen_at > now() - ${seenWithin}::interval
+      and (valid_until is null or valid_until >= (now() at time zone 'Europe/Berlin')::date)`)
+    // gespeicherte Aktionen mit den aktuellen Regeln erneut prüfen (Abteilungs-Aktionen, Wert „ab 50 € 10 €“ → 10 statt 50)
     .filter((v) => isGeneralPromo(v.title))
+    .flatMap((v) => { const pv = promoValue(v.title); return pv ? [{ ...v, value: pv.value, value_type: pv.valueType }] : []; })
+    .filter((v) => v.value_type === 'percent' ? Number(v.value) <= 25 : Number(v.value) <= 50)
     .map((v): Voucher => ({ id: `promo:${v.shop}:${v.title}`, kind: 'voucher', shop: v.shop, label: `Aktion „${v.title.slice(0, 60)}“`,
       code: null, value: Number(v.value), value_type: v.value_type, min_order: v.min_order != null ? Number(v.min_order) : null, valid_until: null }));
   const bundleCandidates = new Map<string, { voucher: Voucher; items: { product: string; name: string; offer: Offer }[] }>();

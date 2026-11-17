@@ -45,3 +45,23 @@ test('Abteilungs-Aktionen sind keine allgemeinen Aktionen', () => {
   assert.equal(namesOtherCategory('10 % auf Spielzeug', 'Musterton MX-500'), 'spielzeug');
   assert.equal(namesOtherCategory('10 € Gutschein', 'Musterton MX-500'), null);
 });
+
+import { promoValue, promoValidUntil } from '../src/jobs/vouchers.ts';
+test('Wert einer Shop-Aktion', () => {
+  assert.deepEqual(promoValue('ab 50 € 10 € Rabatt auf alles'), { value: 10, valueType: 'eur' });
+  assert.deepEqual(promoValue('Singles Day: 11 € Rabatt ab 100 € Einkaufswert'), { value: 11, valueType: 'eur' });
+  assert.deepEqual(promoValue('15 € auf das gesamte Sortiment, 200 € MBW'), { value: 15, valueType: 'eur' });
+  assert.deepEqual(promoValue('11% Direktabzug ab 100 €'), { value: 11, valueType: 'percent' });
+  assert.equal(promoValue('10 € ab 100 €, 25 € ab 200 € auf alles'), null);   // Staffel → mehrdeutig
+  assert.equal(promoValue('10 % auf alles, 15 % ab 3 Artikeln'), null);
+  assert.equal(promoValue('Rabatt ab 50 €'), null);
+});
+
+test('Gültigkeit einer Shop-Aktion', () => {
+  const posted = new Date('2026-11-24T10:00:00Z');
+  assert.equal(promoValidUntil('10 % auf alles', posted), '2026-11-24');
+  assert.equal(promoValidUntil('10 % auf alles – gültig bis 30.11.', posted), '2026-11-30');
+  assert.equal(promoValidUntil('10 % auf alles bis 05.01.', new Date('2026-12-20T10:00:00Z')), '2027-01-05');
+  // 23:30 MEZ zählt noch zum selben Tag
+  assert.equal(promoValidUntil('10 % auf alles', new Date('2026-11-24T22:30:00Z')), '2026-11-24');
+});

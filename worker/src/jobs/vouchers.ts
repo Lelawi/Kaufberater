@@ -7,6 +7,7 @@ import { loadHtml } from '../util/extract.ts';
 import { normShop } from '../util/shop.ts';
 import { parsePrice } from '../util/money.ts';
 import { parsePepperList } from '../adapters/pepper.ts';
+import { hotWindow, berlinDate } from '../util/events.ts';
 
 const SLUG_OVERRIDES: Record<string, string> = { galaxus: 'galaxus.de', amazon: 'amazon-de', mediamarkt: 'mediamarkt-de', saturn: 'saturn-de' };
 
@@ -17,6 +18,41 @@ export function minOrderOf(text: string): number | null {
   const m = text.match(/(?:\bab|MBW:?|Mindestbestellwert:?|Mindestbestellwert von)\s*(\d{2,4}(?:[.,]\d{2})?)\s*(?:€|EUR|Euro)/i)
     ?? text.match(/(\d{2,4})\s*(?:€|EUR|Euro)\s*MBW/i);
   return m ? parsePrice(m[1]) : null;
+}
+
+/**
+ * Wert einer Aktion aus dem Titel. „ab 50 € 10 € Rabatt“ → 10 € (nicht 50: Beträge nach „ab“/„MBW“/„Einkaufswert“ sind
+ * der Mindestbestellwert). Mehrdeutig (mehrere verschiedene Werte, z. B. Staffeln) → null = nicht einrechnen.
+ */
+export function promoValue(title: string): { value: number; valueType: 'eur' | 'percent' } | null {
+  const t = title.replace(/\s+/g, ' ');
+  const pcts = [...new Set([...t.matchAll(/(\d{1,2}(?:[.,]\d+)?)\s*%/g)].map((m) => Number(m[1].replace(',', '.'))))];
+  if (pcts.length > 1) return null;
+  if (pcts.length === 1) return pcts[0] > 0 ? { value: pcts[0], valueType: 'percent' } : null;
+  const eurs: number[] = [];
+  for (const m of t.matchAll(/(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:€|-?euro\b|eur\b)/gi)) {
+    const before = t.slice(Math.max(0, m.index! - 25), m.index!);
+    const after = t.slice(m.index! + m[0].length, m.index! + m[0].length + 25);
+    // Mindestbestellwert: „ab 50 €“, „bei 50 €“, „über 50 €“, „MBW 50 €“, „50 € MBW/Einkaufswert/Bestellwert“
+    if (/(?:\bab|\bbei|\büber|\bueber|\bmbw:?|mindestbestellwert:?(?: von)?|einkaufswert(?: von)?|bestellwert(?: von)?|warenwert(?: von)?)\s*$/i.test(before)) continue;
+    if (/^\s*(?:mbw|einkaufswert|bestellwert|warenwert|mindestbestellwert)/i.test(after)) continue;
+    const v = parsePrice(m[1]);
+    if (v && !eurs.includes(v)) eurs.push(v);
+  }
+  return eurs.length === 1 ? { value: eurs[0], valueType: 'eur' } : null;
+}
+
+/** Gültig bis: „gültig bis 13.11.“ / „bis 30.11.2026“ im Titel, sonst Ende des Posting-Tags (Aktionstage gelten oft nur einen Tag) */
+export function promoValidUntil(title: string, postedAt: Date | null, now = new Date()): string {
+  const m = title.match(/\bbis\s*(?:zum\s*)?(\d{1,2})\.(\d{1,2})\.(\d{2,4})?/i);
+  const [py, pm, pd] = berlinDate(postedAt ?? now);
+  if (m) {
+    const d = +m[1]; const mo = +m[2];
+    let y = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : py;
+    if (!m[3] && (mo < pm || (mo === pm && d < pd))) y++;   // „bis 05.01.“ im Dezember gepostet
+    if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12) return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  return `${py}-${String(pm).padStart(2, '0')}-${String(pd).padStart(2, '0')}`;
 }
 
 /** Allgemeine Aktion des Shops (gilt für den ganzen Einkauf, ohne Bedingung an die Person) – wird beim Preis
@@ -69,12 +105,11 @@ export function parseVoucherPage(html: string): ShopVoucher[] {
     for (let i = 0; i < 8 && card.parent().length && !card.parent().is(list) && card.parent().find('h3').length === 1; i++) card = card.parent();
     const text = card.text().replace(/\s+/g, ' ');
     const cb = title.match(/(\d+(?:,\d+)?)\s*%\s*Cashback auf Deine Einkäufe/i);
-    const pct = title.match(/(\d+(?:,\d+)?)\s*%/);
-    const eur = title.match(/(\d+(?:[.,]\d+)?)\s*€/);
+    const pv = promoValue(title);
     out.push({
       title, code: /Code anzeigen|Gutscheincode/i.test(text + title),
-      value: pct ? Number(pct[1].replace(',', '.')) : eur ? parsePrice(eur[1]) : null,
-      valueType: pct ? 'percent' : eur ? 'eur' : null,
+      value: pv?.value ?? null,
+      valueType: pv?.valueType ?? null,
       cashbackPercent: cb ? Number(cb[1].replace(',', '.')) : null,
       minOrder: minOrderOf(title) ?? minOrderOf(text),
       general: isGeneralPromo(title),
@@ -85,9 +120,10 @@ export function parseVoucherPage(html: string): ShopVoucher[] {
 
 export async function runVouchers(force = false) {
   const sql = await db();
-  // alle 8 Std. – Aktionstage (Singles Day, Black Friday) gelten oft nur einen Tag
+  // alle 8 Std., in der heißen Phase alle 2,5 Std. – Aktionstage (Singles Day, Black Friday) gelten oft nur einen Tag
+  const everyH = hotWindow() ? 2.5 : 8;
   const last = await sql`select max(last_seen_at) as t from kb_shop_vouchers where source = 'mydealz'`;
-  if (!force && last[0]?.t && Date.now() - new Date(last[0].t).getTime() < 8 * 3600_000) return { skipped: true };
+  if (!force && last[0]?.t && Date.now() - new Date(last[0].t).getTime() < everyH * 3600_000) return { skipped: true };
   const shops = await sql`
     select distinct on (lower(o.shop)) o.shop from (
       select shop, row_number() over (partition by product_id order by effective_total) rn
@@ -134,12 +170,13 @@ export async function runVouchers(force = false) {
         if (normShop(t.merchant ?? '') !== n) continue;
         if (!/gutschein|rabatt|direktabzug|aktion|%\s*(?:auf|extra)|€\s*ab|mbw|sortiment|warenkorb/i.test(t.title)) continue;
         if (!isGeneralPromo(t.title)) continue;
-        const pct = t.title.match(/(\d+(?:,\d+)?)\s*%/);
-        const eur = t.title.match(/(\d+(?:[.,]\d+)?)\s*(?:€|-?Euro)/i);
-        await sql`insert into kb_shop_vouchers (shop, source, external_id, title, value, value_type, min_order, conditions, url, last_seen_at, expired)
-                  values (${n}, 'mydealz-deal', ${t.externalId}, ${t.title.slice(0, 300)}, ${pct ? Number(pct[1].replace(',', '.')) : eur ? parsePrice(eur[1]) : null},
-                          ${pct ? 'percent' : 'eur'}, ${minOrderOf(t.title)}, 'allgemein', ${t.url}, now(), false)
-                  on conflict (source, external_id) do update set last_seen_at = now(), expired = false`;
+        const pv = promoValue(t.title);
+        if (!pv) continue;   // Wert mehrdeutig → lieber gar nicht einrechnen
+        const until = promoValidUntil(t.title, t.postedAt);
+        await sql`insert into kb_shop_vouchers (shop, source, external_id, title, value, value_type, min_order, conditions, url, last_seen_at, expired, valid_until)
+                  values (${n}, 'mydealz-deal', ${t.externalId}, ${t.title.slice(0, 300)}, ${pv.value}, ${pv.valueType}, ${minOrderOf(t.title)}, 'allgemein', ${t.url}, now(), false, ${until})
+                  on conflict (source, external_id) do update set last_seen_at = now(), expired = false, value = excluded.value,
+                    value_type = excluded.value_type, min_order = excluded.min_order, valid_until = excluded.valid_until`;
         found++;
       }
       await sql`update kb_shop_vouchers set expired = true where source = 'mydealz-deal' and shop = ${n} and last_seen_at < now() - interval '1 hour'`;
