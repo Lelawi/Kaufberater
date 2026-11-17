@@ -845,6 +845,9 @@ async function viewAlerts() {
     await sb.from('kb_alerts').update({ read_at: new Date().toISOString() }).is('read_at', null);
     route();
   };
+  // Gesehen = gelesen (17.11.): Punkte bleiben auf dieser Seite sichtbar, die Zahl am Menü verschwindet
+  const unseen = data.filter((a) => !a.read_at).map((a) => a.id);
+  if (unseen.length) sb.from('kb_alerts').update({ read_at: new Date().toISOString() }).in('id', unseen).is('read_at', null).then(refreshBadge);
   view.querySelectorAll('.alert-row').forEach((el) => el.addEventListener('click', () => {
     sb.from('kb_alerts').update({ read_at: new Date().toISOString() }).eq('id', el.dataset.id).is('read_at', null).then(refreshBadge);
   }));
