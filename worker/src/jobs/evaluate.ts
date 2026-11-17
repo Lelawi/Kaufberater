@@ -5,6 +5,7 @@ import { fmtEur, round2 } from '../util/money.ts';
 import { sameShop, normShop, exactShop } from '../util/shop.ts';
 import { isGeneralPromo, namesOtherCategory, promoValue } from './vouchers.ts';
 import { hotWindow, offerMaxAge } from '../util/events.ts';
+import { excludeSqlPatterns } from '../util/match.ts';
 import { cheapestBasket, basketText, type Basket } from '../util/pack.ts';
 import { createAlert, enoughBetter, similarRecentAlert } from './alerts.ts';
 import type { ProductRow } from '../products.ts';
@@ -62,13 +63,17 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     const vouchers = [...userVouchers.get(p.user_id)!, ...shopPromos];
     // Ausschlusswörter (z. B. nach „Welches Produkt meinst du?“) auf schon gespeicherte Quellen, Angebote und Deals anwenden
     if (p.exclude_terms?.length) {
-      const pats = p.exclude_terms.filter((t) => t.trim().length >= 3).map((t) => `%${t.trim()}%`);
-      if (pats.length) {
-        await sql`update kb_listings set rejected = true where product_id = ${p.id} and not rejected and discovered_by <> 'user' and title ilike any(${pats})`;
-        await sql`update kb_offers set gone = true where product_id = ${p.id} and not gone and title ilike any(${pats})`;
-        await sql`delete from kb_price_history h using kb_deals d where d.product_id = ${p.id} and d.title ilike any(${pats})
+      // nur ganze Wörter (Review 17.11.: „Pro“ traf „Produkt“, „Max“ traf „Maximal“ → Quellen dauerhaft abgelehnt)
+      const { regex, like } = excludeSqlPatterns(p.exclude_terms);
+      if (regex.length) {
+        const hit = (col: string) => like.length
+          ? sql`(${sql(col)} ~* any(${regex}) or regexp_replace(upper(${sql(col)}), '[^A-Z0-9]', '', 'g') like any(${like}))`
+          : sql`${sql(col)} ~* any(${regex})`;
+        await sql`update kb_listings set rejected = true where product_id = ${p.id} and not rejected and discovered_by <> 'user' and ${hit('title')}`;
+        await sql`update kb_offers set gone = true where product_id = ${p.id} and not gone and ${hit('title')}`;
+        await sql`delete from kb_price_history h using kb_deals d where d.product_id = ${p.id} and ${hit('d.title')}
                   and h.product_id = d.product_id and h.series = 'deal:' || d.portal and h.total = d.price`;
-        await sql`delete from kb_deals where product_id = ${p.id} and title ilike any(${pats})`;
+        await sql`delete from kb_deals where product_id = ${p.id} and ${hit('title')}`;
       }
     }
     // Angebote abgelehnter Quellen zählen nicht (auch wenn ihr Titel das Ausschlusswort nicht enthält)

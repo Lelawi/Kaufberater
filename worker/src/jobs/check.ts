@@ -9,7 +9,7 @@ import { plausibleOffers } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
 import { pageHistory, pageImage } from '../util/history.ts';
 import { offerPackSize, packSize } from '../util/pack.ts';
-import { norm } from '../util/match.ts';
+import { hasExcludedWord } from '../util/match.ts';
 
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
@@ -63,8 +63,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
           toQuery({ id: l.product_id, name: l.p_name, brand: l.p_brand, model: l.p_model, ean: l.p_ean, search_terms: l.p_terms, exclude_terms: l.p_exclude }),
         );
         // Ausgeschlossene Varianten (z. B. „Essential“ nach der Rückfrage) gar nicht erst speichern
-        const ex = (l.p_exclude ?? []).map(norm).filter(Boolean);
-        const usable = plausibleOffers(offers.filter((o) => o.shipsToDE !== false && o.price > 0 && !ex.some((e) => norm(o.title).includes(e))));
+        const usable = plausibleOffers(offers.filter((o) => o.shipsToDE !== false && o.price > 0 && !hasExcludedWord(o.title, l.p_exclude)));
         // Preisvergleich liefert plötzlich (fast) nichts, obwohl vorher viele Angebote da waren → Seite vermutlich unvollständig.
         // Dann nichts als „verschwunden“ markieren, sondern bald noch einmal versuchen.
         if (adapter.kind === 'aggregator' && usable.length <= 1) {

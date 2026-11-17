@@ -85,3 +85,16 @@ test('Erneute Meldung nur bei spürbarer Verbesserung', () => {
   assert.ok(enoughBetter(12.5, 12.2, true)); // Stückpreis: 2 % = 0,25 €
   assert.ok(!enoughBetter(12.5, 12.4, true));
 });
+
+import { hasExcludedWord, excludeSqlPatterns, matchTitle } from '../src/util/match.ts';
+test('Ausschlusswörter nur als ganzes Wort', () => {
+  assert.equal(hasExcludedWord('Musterton MX-500 Produktbild', ['Pro']), null);
+  assert.equal(hasExcludedWord('Musterton MX-500 maximal leise', ['Max']), null);
+  assert.equal(hasExcludedWord('Musterton MX-500 Pro schwarz', ['Pro']), 'Pro');
+  assert.equal(hasExcludedWord('Musterton MX-500 Pro Max', ['pro max']), 'pro max');
+  assert.equal(hasExcludedWord('Musterton MX 600 schwarz', ['MX-600']), 'MX-600');   // Modellnummer auch ohne Trennzeichen
+  assert.ok(matchTitle({ name: 'Musterton MX-500', model: 'MX-500', exclude: ['Pro'] }, 'Musterton MX-500 Produktpaket').reason.indexOf('ausgeschlossen') < 0);
+  const { regex, like } = excludeSqlPatterns(['Pro', 'MX-600', 'a.b']);
+  assert.deepEqual(regex, ['\\yPro\\y', '\\yMX-600\\y', '\\ya\\.b\\y']);
+  assert.deepEqual(like, ['%MX600%']);
+});

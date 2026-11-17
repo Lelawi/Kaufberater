@@ -25,6 +25,36 @@ export function norm(s: string | null | undefined): string {
     .replace(/[^A-Z0-9]/g, '');
 }
 
+/** Ausschlusswort nur als ganzes Wort/Wortfolge („Pro“ trifft nicht „Produkt“, „Max“ nicht „Maximal“).
+ *  Modellnummern-artige Begriffe (mit Ziffer, ab 4 Zeichen) zusätzlich ohne Trennzeichen („WH-1000“ = „WH1000“). */
+export function isCodeTerm(term: string): boolean {
+  const n = norm(term);
+  return n.length >= 4 && /\d/.test(n);
+}
+export function hasExcludedWord(title: string | null | undefined, terms: (string | null | undefined)[] | null | undefined): string | null {
+  if (!title || !terms?.length) return null;
+  const flat = (x: string) => ` ${words(x).join(' ')} `;
+  const t = flat(title);
+  const nt = norm(title);
+  for (const term of terms) {
+    if (!term?.trim()) continue;
+    const w = flat(term);
+    if (w.trim() && t.includes(w)) return term;
+    if (isCodeTerm(term) && nt.includes(norm(term))) return term;
+  }
+  return null;
+}
+
+/** Postgres-Muster dafür: \y = Wortgrenze; Modellnummern zusätzlich als Teilstring des normalisierten Titels */
+export function excludeSqlPatterns(terms: string[]): { regex: string[]; like: string[] } {
+  const ts = terms.map((t) => t.trim()).filter((t) => t.length >= 2);
+  return {
+    regex: ts.map((t) => `\\y${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '[\\s-]+')}\\y`),
+    // gegen den normalisierten Titel (nur A–Z/0–9) vergleichen: „MX 600“ = „MX-600“
+    like: ts.filter(isCodeTerm).map((t) => `%${norm(t)}%`),
+  };
+}
+
 export function words(s: string | null | undefined): string[] {
   return (s ?? '')
     .toLowerCase()
@@ -80,9 +110,8 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   const tw = new Set(words(title));
   const pw = new Set(words(`${p.name} ${p.model ?? ''} ${(p.terms ?? []).join(' ')}`));
 
-  for (const ex of p.exclude ?? []) {
-    if (ex && nt.includes(norm(ex))) return { score: 0, reason: `ausgeschlossenes Wort: ${ex}` };
-  }
+  const exHit = hasExcludedWord(title, p.exclude);
+  if (exHit) return { score: 0, reason: `ausgeschlossenes Wort: ${exHit}` };
 
   // Zubehör erkennen (nur wenn das Produkt selbst kein solches Wort enthält)
   // Zubehör-Wort zählt nur, wenn es vor der Modellnummer steht („Wandhalterung für OLED77G6“) –
