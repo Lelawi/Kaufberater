@@ -69,7 +69,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         const hit = (col: string) => like.length
           ? sql`(${sql(col)} ~* any(${regex}) or regexp_replace(upper(${sql(col)}), '[^A-Z0-9]', '', 'g') like any(${like}))`
           : sql`${sql(col)} ~* any(${regex})`;
-        await sql`update kb_listings set rejected = true where product_id = ${p.id} and not rejected and discovered_by <> 'user' and ${hit('title')}`;
+        await sql`update kb_listings set rejected = true, active = false where product_id = ${p.id} and not rejected and discovered_by <> 'user' and ${hit('title')}`;
         await sql`update kb_offers set gone = true where product_id = ${p.id} and not gone and ${hit('title')}`;
         await sql`delete from kb_price_history h using kb_deals d where d.product_id = ${p.id} and ${hit('d.title')}
                   and h.product_id = d.product_id and h.series = 'deal:' || d.portal and h.total = d.price`;
@@ -78,6 +78,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     }
     // Angebote abgelehnter Quellen zählen nicht (auch wenn ihr Titel das Ausschlusswort nicht enthält)
     await sql`update kb_offers o set gone = true from kb_listings l where l.id = o.listing_id and l.rejected and o.product_id = ${p.id} and not o.gone`;
+    // abgelehnt (auch in der App) = abgeschaltet
+    await sql`update kb_listings set active = false where product_id = ${p.id} and rejected and active`;
     // Preisverlauf von abgewählten/falschen Quellen entfernen – sonst verfälschen deren Preise Diagramm, Tiefstpreis und Schwellen
     const h1 = await sql`delete from kb_price_history h using kb_offers o, kb_listings l
                          where h.product_id = ${p.id} and h.offer_id = o.id and o.listing_id = l.id and l.rejected`;
@@ -408,7 +410,9 @@ async function priceContext(productId: string, multi: boolean, price: number, tr
 
 async function maxSeen(productId: string): Promise<number | null> {
   const sql = await db();
-  const r = await sql`select max(total) as m from kb_price_history where product_id = ${productId} and observed_at > now() - interval '120 days'`;
+  const r = await sql`select max(total) as m from kb_price_history h where product_id = ${productId} and observed_at > now() - interval '120 days'
+                      and not exists (select 1 from kb_offers o join kb_listings l on l.id = o.listing_id where o.id = h.offer_id and l.rejected)
+                      and not exists (select 1 from kb_listings l where l.product_id = ${productId} and l.rejected and h.series = 'hist:' || l.source and h.shop = l.external_id)`;
   return r[0]?.m ? Number(r[0].m) : null;
 }
 

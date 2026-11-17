@@ -33,6 +33,7 @@ export async function runDigest(force = false) {
       select p.id, p.name, p.image_url, p.quantity, p.best_price, p.threshold_good, p.threshold_top, p.threshold_instant, p.max_price,
         (select min(h.total / case when p.quantity > 1 then h.pack_size else 1 end) from kb_price_history h
           where h.product_id = p.id and h.series = 'offer' and h.condition = 'new'
+            and not exists (select 1 from kb_offers o join kb_listings l on l.id = o.listing_id where o.id = h.offer_id and l.rejected)
             and h.observed_at between now() - interval '8 days' and now() - interval '6 days') as before
       from kb_products p where p.user_id = ${u.user_id} and p.status = 'watching' and p.best_price is not null
       order by p.name`;

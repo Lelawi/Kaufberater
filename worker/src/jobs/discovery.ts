@@ -102,7 +102,8 @@ export async function runDiscovery(deadline: number, onlyProductId?: string) {
     const old = await sql`select id, title from kb_listings where product_id = ${p.id} and not rejected and discovered_by = 'search' and source <> 'shop' and title is not null`;
     const bad = old.filter((l) => matchTitle(toQuery(p), l.title as string).score < 0.5).map((l) => l.id as string);
     if (bad.length) {
-      await sql`update kb_listings set rejected = true where id = any(${bad}::uuid[])`;
+      // abgelehnt = abgeschaltet: nicht mehr abfragen, Angebote zählen nicht (17.11.: Zubehör-Listings blieben aktiv)
+      await sql`update kb_listings set rejected = true, active = false where id = any(${bad}::uuid[])`;
       await sql`update kb_offers set gone = true where listing_id = any(${bad}::uuid[])`;
     }
     // Nichts eindeutig gefunden (z. B. „Bosch Heizungsthermostat Matter“ statt „Heizkörper-Thermostat II [+M]“):

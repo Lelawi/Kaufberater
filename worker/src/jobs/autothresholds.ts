@@ -111,7 +111,11 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
     // Preisverlauf der Preisvergleiche (ca. 6 Monate): 10-%-Tiefpunkt, damit ein einzelner Ausreißer-Tag nicht zählt
     const [h] = await sql`select percentile_cont(0.1) within group (order by d.m) as low, count(*)::int as n from (
                             select (observed_at at time zone 'Europe/Berlin')::date as day, min(total / case when ${multi} then pack_size else 1 end) as m from kb_price_history
-                            where product_id = ${p.id} and series like 'hist:%' and observed_at > now() - interval '200 days' group by 1) d`;
+                            where product_id = ${p.id} and series like 'hist:%' and observed_at > now() - interval '200 days'
+                              -- Verlauf abgelehnter Quellen (Zubehör, falsche Variante) zählt nicht
+                              and not exists (select 1 from kb_listings l where l.product_id = ${p.id} and l.rejected
+                                                and kb_price_history.series = 'hist:' || l.source and kb_price_history.shop = l.external_id)
+                            group by 1) d`;
     const histLow = h?.n >= 20 && h.low ? Number(h.low) : null;
     const seen = [p.lowest_seen ? Number(p.lowest_seen) : null, histLow].filter((x): x is number => x != null);
     // Üblicher Händlerpreis: Median der aktuellen Neuware-Angebote (pro Stück), erst ab 5 Angeboten aussagekräftig
