@@ -28,6 +28,9 @@ export function isGeneralPromo(title: string): boolean {
   // „Baby-Wunschliste 15 %“, „Black Weeks 50 € extra mit Rabattcode“ durch → Fehlalarme in Serie)
   if (!/direktabzug|warenkorbrabatt|auf (?:alles|fast alles|nahezu alles|das (?:gesamte |komplette )?(?:[\w-]+-)?sortiment|(?:deine|ihre|die) (?:gesamte )?bestellung|den (?:gesamten )?warenkorb)|\bab \d{2,4}\s*(?:€|euro)\s*(?:einkaufswert|bestellwert|warenwert|mbw)/i.test(title)) return false;
   if (/ausgewählt|teilnehmend|wunschliste|geschenkgutschein|gutscheinkarte|digitaler gutschein|haul|marketplace|marktplatz|vorbestell|abo\b/i.test(title)) return false;
+  // Abteilungs-Aktionen („auf alles aus dem Backshop“), personalisierte App-Coupons, nur in der Filiale
+  if (/\b(?:alles|sortiment)\s+(?:aus|in|im|von)\s+(?:de[mnr]|unsere[mnr]?)\s|personalisiert|coupon|filiale|\bvor ort\b|im markt\b|offline|\bplus\]/i.test(title)) return false;
+  if (namesOtherCategory(title, '')) return false;
   if (/bis zu|cashback|newsletter|neukunde|erstbestellung|erste bestellung|registrier|club|\bapp\b|mitglied|student|versand|payback|punkte|gewinn|rezension|bewertung|sammle|outlet|refurbished|trade-?in|eintausch|altgerät/i.test(title)) return false;
   // „… im LG TV Set“, „… für Heimkinosysteme“, „… beim Kauf von …“ → nur für bestimmte Produkte
   if (/\b(?:für|im|beim|zum kauf|auf ausgewählte)\s+(?!(?:alles|den einkauf|deinen einkauf|die bestellung|deine bestellung)\b)[A-ZÄÖÜa-zäöü]/.test(title.replace(/\bzum singles ?days?\b/i, ''))) return false;
@@ -35,6 +38,22 @@ export function isGeneralPromo(title: string): boolean {
   const auf = title.match(/\bauf\s+(.{0,40})/i);
   if (auf && !/^(?:alles|alle artikel|fast alles|nahezu alles|das (?:gesamte |komplette )?(?:[\w-]+-)?sortiment|(?:deine|ihre|die|den) (?:gesamte[n]? )?(?:bestellung|einkäufe|einkauf|warenkorb))/i.test(auf[1])) return false;
   return true;
+}
+
+/** Abteilungen/Sortimente, auf die sich eine Aktion beschränken kann (14.11.: „20 % auf alles aus dem Backshop“ eines
+ *  Supermarkts wurde bei einem Elektrogerät desselben Shops abgezogen). Steht so ein Wort im Text, aber nicht im
+ *  Produktnamen, gilt die Aktion nicht für das Produkt. */
+const CATEGORY_WORDS = ['backshop', 'backwaren', 'bäckerei', 'baeckerei', 'brot', 'lebensmittel', 'getränke', 'getraenke', 'wein', 'bier',
+  'spirituosen', 'obst', 'gemüse', 'gemuese', 'fleisch', 'wurst', 'käse', 'kaese', 'süßwaren', 'suesswaren', 'tiefkühl', 'tiefkuehl', 'drogerie',
+  'kosmetik', 'parfum', 'parfüm', 'beauty', 'mode', 'fashion', 'kleidung', 'bekleidung', 'schuhe', 'sneaker', 'wäsche', 'waesche', 'textil',
+  'spielzeug', 'spielwaren', 'lego', 'baby', 'kinder', 'möbel', 'moebel', 'matratze', 'matratzen', 'garten', 'pflanzen', 'blumen', 'tierbedarf',
+  'tiernahrung', 'futter', 'bücher', 'buecher', 'ebook', 'fahrrad', 'fahrräder', 'e-bike', 'sportartikel', 'reifen', 'autoteile', 'brillen',
+  'kontaktlinsen', 'medikamente', 'apotheke', 'tickets', 'reisen', 'hotel', 'gutscheinkarten', 'handyvertrag', 'tarif', 'strom', 'gas'];
+
+export function namesOtherCategory(text: string, productName: string): string | null {
+  const ws = (s: string) => new Set(s.toLowerCase().split(/[^a-zäöüß0-9-]+/).filter(Boolean));
+  const t = ws(text); const p = ws(productName);
+  return CATEGORY_WORDS.find((w) => t.has(w) && !p.has(w)) ?? null;
 }
 
 export function parseVoucherPage(html: string): ShopVoucher[] {

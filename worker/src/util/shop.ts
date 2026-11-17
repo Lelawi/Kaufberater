@@ -14,6 +14,18 @@ export function sameShop(a: string | null | undefined, b: string | null | undefi
   return x === y || (x.length >= 4 && y.startsWith(x)) || (y.length >= 4 && x.startsWith(y));
 }
 
+/** Kennung eines Shops für Gutscheine/Cashback/Aktionen – wie runVouchers sie speichert („Media Markt Online Shop“ → „mediamarkt“).
+ *  Marktplatz-Händler („mediamarkt.de (Marktplatzhändler)“, „Amazon Marketplace“) bekommen eine eigene Kennung. */
+export function shopKey(s: string | null | undefined): string {
+  return normShop(s).replace(/(onlineshop|shop)$/, '');
+}
+
+/** Exakt derselbe Shop (kein Präfix-Vergleich): Gutscheine, Cashback und Shop-Aktionen gelten nur dort */
+export function exactShop(a: string | null | undefined, b: string | null | undefined): boolean {
+  const x = shopKey(a); const y = shopKey(b);
+  return x.length >= 2 && x === y;
+}
+
 export function hostOf(url: string | null | undefined): string {
   try { return new URL(url ?? '').host.replace(/^www\./, ''); } catch { return ''; }
 }

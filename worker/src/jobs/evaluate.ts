@@ -2,7 +2,8 @@
 // Preisschutz nach dem Kauf, Ende des Zeitfensters, künstliche Rabatte, Bündel-Möglichkeiten
 import { db } from '../db.ts';
 import { fmtEur, round2 } from '../util/money.ts';
-import { sameShop, normShop } from '../util/shop.ts';
+import { sameShop, normShop, exactShop } from '../util/shop.ts';
+import { isGeneralPromo, namesOtherCategory } from './vouchers.ts';
 import { cheapestBasket, basketText, type Basket } from '../util/pack.ts';
 import { createAlert } from './alerts.ts';
 import type { ProductRow } from '../products.ts';
@@ -20,8 +21,8 @@ interface Offer {
   price: number; shipping: number | null; total: number; list_price: number | null; in_stock: boolean | null; title: string | null;
   pack_size: number;
 }
-interface Voucher { id: string; kind: string; shop: string | null; label: string; code: string | null; value: number | null; value_type: string | null; min_order: number | null; valid_until: Date | null }
-interface Rate { portal: string; shop: string; rate_percent: number | null; rate_eur: number | null; rate_text: string }
+export interface Voucher { id: string; kind: string; shop: string | null; label: string; code: string | null; value: number | null; value_type: string | null; min_order: number | null; valid_until: Date | null }
+export interface Rate { portal: string; shop: string; rate_percent: number | null; rate_eur: number | null; rate_text: string }
 
 const LEVEL_LABEL: Record<string, string> = { good: 'Guter Preis', top: 'Top-Preis', instant: 'Sofort zuschlagen!' };
 
@@ -40,6 +41,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     select shop, title, value, value_type, min_order from kb_shop_vouchers
     where not expired and conditions = 'allgemein' and value is not null and last_seen_at > now() - interval '2 days'`)
     .filter((v) => v.value_type === 'percent' ? Number(v.value) <= 25 : Number(v.value) <= 50)
+    // gespeicherte Aktionen mit den aktuellen Regeln erneut prüfen (z. B. Abteilungs-Aktionen, die früher durchrutschten)
+    .filter((v) => isGeneralPromo(v.title))
     .map((v): Voucher => ({ id: `promo:${v.shop}:${v.title}`, kind: 'voucher', shop: v.shop, label: `Aktion „${v.title.slice(0, 60)}“`,
       code: null, value: Number(v.value), value_type: v.value_type, min_order: v.min_order != null ? Number(v.min_order) : null, valid_until: null }));
   const bundleCandidates = new Map<string, { voucher: Voucher; items: { product: string; name: string; offer: Offer }[] }>();
@@ -99,7 +102,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       `;
 
     // 1) Effektiver Endpreis je Angebot
-    const enriched = offers.map((o) => ({ o, ...effective(o, vouchers, rates) }));
+    const enriched = offers.map((o) => ({ o, ...effective(o, vouchers, rates, p.name) }));
     if (enriched.length) {
       // alle Endpreise in einer Abfrage aktualisieren
       const upd = enriched.map((e) => ({ id: e.o.id, eff: e.eff, notes: e.notes || null }));
@@ -154,7 +157,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         if (!b) continue;
         const main = group.find((e) => e.o.id === b.items[0].id)!;
         // Gutscheine/Cashback auf die ganze Bestellung (nicht je Packung)
-        const ef = effective({ ...main.o, price: b.goods, shipping: b.shipping, total: b.total }, vouchers, rates);
+        const ef = effective({ ...main.o, price: b.goods, shipping: b.shipping, total: b.total }, vouchers, rates, p.name);
         const c: Cand = { o: main.o, eff: round2(ef.eff / quantity), sum: ef.eff, notes: ef.notes, basket: b };
         if (!bestC || c.sum < bestC.sum) bestC = c;
       }
@@ -291,7 +294,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
 
     // 7) Bündel-Kandidaten sammeln (Gutschein mit Mindestbestellwert)
     for (const v of vouchers.filter((x) => x.kind === 'voucher' && x.min_order && x.shop)) {
-      const atShop = newOnes.find((e) => sameShop(e.o.shop, v.shop));
+      if (namesOtherCategory(v.label, p.name)) continue;
+      const atShop = newOnes.find((e) => exactShop(e.o.shop, v.shop));
       if (!atShop || atShop.o.total >= v.min_order!) continue;
       const k = `${p.user_id}:${v.id}`;
       const entry = bundleCandidates.get(k) ?? { voucher: v, items: [] };
@@ -317,7 +321,12 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
 
 type Cand = { o: Offer; eff: number; sum: number; notes: string; basket?: Basket };
 
-function effective(o: Offer, vouchers: Voucher[], rates: Rate[]): { eff: number; notes: string } {
+/**
+ * Endpreis nach Abzügen. Nie global (Regel): Gutscheine/Aktionen/Cashback nur bei exakt passendem Shop,
+ * Gutscheine ohne Shop werden ignoriert, Texte mit anderer Abteilung/Kategorie („Backshop“) zählen nicht,
+ * Cashback „bis zu …“ wird nicht abgezogen (unklar, welcher Satz gilt).
+ */
+export function effective(o: Pick<Offer, 'source' | 'shop' | 'price' | 'shipping' | 'total'>, vouchers: Voucher[], rates: Rate[], productName = ''): { eff: number; notes: string } {
   let eff = Number(o.total);
   const notes: string[] = [];
   // Prime: kostenloser Versand bei Amazon
@@ -327,7 +336,8 @@ function effective(o: Offer, vouchers: Voucher[], rates: Rate[]): { eff: number;
   // Bester einzelner Gutschein
   let bestV: { amount: number; label: string } | null = null;
   for (const v of vouchers.filter((x) => x.kind === 'voucher' && x.value)) {
-    if (v.shop && !sameShop(v.shop, o.shop)) continue;
+    if (!v.shop || !exactShop(v.shop, o.shop)) continue;
+    if (namesOtherCategory(v.label, productName)) continue;
     if (v.min_order && o.price < v.min_order) continue;
     const amount = v.value_type === 'percent' ? o.price * Number(v.value) / 100 : Number(v.value);
     if (!bestV || amount > bestV.amount) bestV = { amount, label: v.label };
@@ -338,7 +348,8 @@ function effective(o: Offer, vouchers: Voucher[], rates: Rate[]): { eff: number;
   let bestC: { amount: number; label: string } | null = null;
   for (const r of rates) {
     if (!portals.some((p) => r.portal.toLowerCase().includes(p) || p.includes(r.portal.toLowerCase()))) continue;
-    if (!sameShop(r.shop, o.shop)) continue;
+    if (!exactShop(r.shop, o.shop)) continue;
+    if (/bis zu|up to|max\.? ?\d/i.test(r.rate_text ?? '')) continue;
     const amount = r.rate_percent ? o.price * Number(r.rate_percent) / 100 : Number(r.rate_eur ?? 0);
     if (amount > 0 && (!bestC || amount > bestC.amount)) bestC = { amount, label: `${r.portal} ${r.rate_text}` };
   }

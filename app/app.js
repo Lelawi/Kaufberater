@@ -913,7 +913,7 @@ async function viewSettings() {
           <div class="field"><label for="vl">Bezeichnung</label><input id="vl" type="text" required placeholder="Amazon Prime"></div>
         </div>
         <div class="grid-2">
-          <div class="field"><label for="vs">Gilt für Shop <span class="muted">(leer = überall)</span></label><input id="vs" type="text" placeholder="mediamarkt"></div>
+          <div class="field"><label for="vs">Gilt für Shop <span class="muted">(bei Gutscheinen Pflicht – wird nur dort abgezogen)</span></label><input id="vs" type="text" placeholder="mediamarkt"></div>
           <div class="field"><label for="vc">Code <span class="muted">(optional)</span></label><input id="vc" type="text"></div>
         </div>
         <div class="grid-2" style="grid-template-columns:1fr 1fr 1fr">
@@ -974,6 +974,8 @@ async function viewSettings() {
   document.getElementById('vf').addEventListener('submit', async (e) => {
     e.preventDefault();
     const g = (x) => document.getElementById(x).value;
+    // Gutscheine gelten nie überall – ohne Shop rechnet der Preisvergleich sie nicht ein
+    if (g('vk') === 'voucher' && !g('vs').trim()) { toast('Bitte den Shop angeben, für den der Gutschein gilt'); document.getElementById('vs').focus(); return; }
     const { error } = await sb.from('kb_vouchers').insert({ kind: g('vk'), label: g('vl').trim(), shop: g('vs').trim() || null, code: g('vc').trim() || null,
       value: g('vv') ? Number(g('vv')) : null, value_type: g('vv') ? g('vt') : null, min_order: g('vm') ? Number(g('vm')) : null, valid_until: g('vu') || null });
     toast(error ? error.message : 'Hinzugefügt'); if (!error) route();
