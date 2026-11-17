@@ -17,13 +17,27 @@ function quantile(xs: number[], q: number): number {
   return s[lo] + (s[hi] - s[lo]) * (i - lo);
 }
 
-export function computeThresholds(best: number, historyMin: number | null, dealPrices: number[], trend: string | null = null) {
+export function computeThresholds(best: number, historyMin: number | null, dealPrices: number[], trend: string | null = null, market: number | null = null) {
   // Preise steigen seit Monaten (z. B. wiederholte Preiserhöhungen): Warten lohnt meist nicht –
   // „gut“ ist dann schon der aktuelle Preis, die anderen Schwellen nur knapp darunter
   if (trend === 'rising') {
-    return { good: roundNice(best), top: roundNice(best * 0.96), instant: roundNice(best * 0.92), basis: 'dem aktuellen Preis (die Preise steigen seit Monaten – Warten lohnt eher nicht)' };
+    return { good: roundNice(best), top: roundNice(best * 0.96), instant: roundNice(best * 0.92), basis: 'dem aktuellen Preis (die Preise steigen seit Monaten – Warten lohnt eher nicht)', already: false };
   }
   const deals = dealPrices.filter((p) => p > best * 0.5 && p < best * 1.3); // Ausreißer (Zubehör, Bundles) weg
+  // Schon jetzt ein guter Preis (17.11.: 34,95 € bei üblich ~46 € und bestem Deal 33,69 € – trotzdem nur Schwellen darunter):
+  // deutlich unter dem Marktschnitt der Händler oder fast so günstig wie der beste frühere Deal → „gut“ = aktueller Preis
+  const lowDeal = deals.length ? Math.min(...deals) : null;
+  const belowMarket = market != null && best <= market * 0.87;
+  const nearDealLow = lowDeal != null && best <= lowDeal * 1.05;
+  if (belowMarket || nearDealLow) {
+    const g = Math.ceil(best);
+    const tp = Math.min(roundNice(Math.min(best * 0.95, lowDeal ?? Infinity)), g - 0.5);
+    const inst = Math.min(roundNice(best * 0.9), tp - 0.5);
+    const basis = belowMarket
+      ? `dem aktuellen Preis – er liegt schon ${Math.round((1 - best / market!) * 100)} % unter dem üblichen Händlerpreis`
+      : 'dem aktuellen Preis – fast so günstig wie der beste frühere Deal';
+    return { good: g, top: tp, instant: inst, basis, already: true };
+  }
   let good: number; let top: number; let instant: number; let basis: string;
   if (deals.length >= 3) {
     good = Math.min(quantile(deals, 0.5), best * 0.97);
@@ -46,7 +60,7 @@ export function computeThresholds(best: number, historyMin: number | null, dealP
   good = Math.min(good, best * 0.98);
   top = Math.max(Math.min(top, good * 0.97), best * 0.6);
   instant = Math.max(Math.min(instant, top * 0.97), best * 0.55);
-  return { good: roundNice(good), top: roundNice(top), instant: roundNice(instant), basis };
+  return { good: roundNice(good), top: roundNice(top), instant: roundNice(instant), basis, already: false };
 }
 
 export async function runAutoThresholds(opts: { productId?: string } = {}) {
@@ -72,15 +86,22 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
                             where product_id = ${p.id} and series like 'hist:%' and observed_at > now() - interval '200 days' group by 1) d`;
     const histLow = h?.n >= 20 && h.low ? Number(h.low) : null;
     const seen = [p.lowest_seen ? Number(p.lowest_seen) : null, histLow].filter((x): x is number => x != null);
-    const t = computeThresholds(Number(p.best_price), seen.length ? Math.min(...seen) : null, deals.map((d) => Number(d.price)), p.price_trend);
+    // Üblicher Händlerpreis: Median der aktuellen Neuware-Angebote (pro Stück), erst ab 5 Angeboten aussagekräftig
+    const [mk] = await sql`select percentile_cont(0.5) within group (order by o.total / case when ${multi} then o.pack_size else 1 end) as med, count(*)::int as n
+                           from kb_offers o where o.product_id = ${p.id} and not o.gone and o.condition = 'new' and coalesce(o.in_stock, true)
+                             and o.last_seen_at > now() - interval '24 hours' and (${multi} or o.pack_size = 1)
+                             and o.listing_id not in (select id from kb_listings where product_id = ${p.id} and (rejected or not active))
+                             and o.disputed_total is null`;
+    const market = mk?.n >= 5 && mk.med ? Number(mk.med) : null;
+    const t = computeThresholds(Number(p.best_price), seen.length ? Math.min(...seen) : null, deals.map((d) => Number(d.price)), p.price_trend, market);
     const upd = await sql`update kb_products set threshold_good = ${t.good}, threshold_top = ${t.top}, threshold_instant = ${t.instant}, threshold_source = 'auto'
               where id = ${p.id} and not thresholds_manual and (threshold_good is null or threshold_source = 'auto')
                 and (threshold_good, threshold_top, threshold_instant) is distinct from (${t.good}::numeric, ${t.top}::numeric, ${t.instant}::numeric)
               returning id`;
     if (!upd.length) continue;
     await createAlert({
-      userId: p.user_id, productId: p.id, kind: 'analysis', level: 'info',
-      title: `${p.name}: Preisüberwachung läuft`,
+      userId: p.user_id, productId: p.id, kind: 'analysis', level: t.already ? 'good' : 'info',
+      title: t.already ? `${p.name}: schon jetzt ein guter Preis` : `${p.name}: Preisüberwachung läuft`,
       body: `Günstigster Preis gerade ${fmtEur(Number(p.best_price))}${multi ? ' pro Stück' : ''}. Vorläufige Schwellen${multi ? ' (pro Stück)' : ''} aus ${t.basis}: gut ${fmtEur(t.good)}, top ${fmtEur(t.top)}, sofort ${fmtEur(t.instant)}. Die Tiefenanalyse verfeinert sie morgen früh.`,
       dedupKey: `auto:${p.id}`,
     });

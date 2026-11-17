@@ -17,6 +17,16 @@ test('Produktabgleich', () => {
   assert.ok(matchTitle(q, 'LG OLED77G68LW evo 77 Zoll').score >= 0.9);
   assert.ok(matchTitle(q, 'LG OLED77G58LW (77 Zoll)').score < 0.75);
   assert.ok(matchTitle(q, 'Wandhalterung für LG OLED77G68LW').score < 0.75);
+  // 17.11.: Zubehör in zusammengesetzten Wörtern, Bundles, Ersatzteil-Listen (erfundene Beispiele)
+  const ctl = { name: 'Musterton MX-500', brand: 'Musterton', model: 'MX-500' };
+  assert.ok(matchTitle(ctl, 'Musterton MX-500').score >= 0.9);
+  assert.ok(matchTitle(ctl, 'Fremdmarke LE Musterton MX-500 Staubschutzcover').score < 0.75);
+  assert.ok(matchTitle(ctl, 'Fremdmarke Musterton MX-500 Hardcase, schützendes Gehäuse').score < 0.75);
+  assert.ok(matchTitle(ctl, 'Musterton MX-500 + Musterton Kopfhörer HP-20').score < 0.75);
+  assert.ok(matchTitle(ctl, 'Musterton AB900 MX500 MX600 CD123 ZZ7 Ersatz Potentiometer-Drehknopf').score < 0.75);
+  const plug = { name: 'Musterfirma Steckdose kompakt +M', brand: 'Musterfirma' };
+  assert.ok(matchTitle(plug, 'Musterfirma Steckdose Kompakt + M').score >= 0.75);
+  assert.ok(matchTitle(plug, 'Musterfirma Smart Home Steckdose kompakt [+M], mit Matter').score >= 0.75);
   const ip = { name: 'iPhone 16 Pro 256GB', brand: 'Apple' };
   assert.ok(matchTitle(ip, 'Apple iPhone 16 Pro 256GB Titan Schwarz').score >= 0.75);
   assert.ok(matchTitle(ip, 'Apple iPhone 16 Pro 128GB Titan Schwarz').score < 0.75);
@@ -57,6 +67,12 @@ test('Vorläufige Schwellen', () => {
   assert.ok(t.good < 2599 && t.instant < 2474, JSON.stringify(t));
   const n = computeThresholds(289, null, []);
   assert.ok(n.good < 289 && n.instant < n.top, JSON.stringify(n));
+  // Schon guter Preis: deutlich unter dem Händler-Median bzw. fast so günstig wie der beste Deal → „gut“ = aktueller Preis
+  const g = computeThresholds(34.95, 34.95, [33.69], null, 46);
+  assert.ok(g.already && g.good >= 34.95 && g.top < g.good && g.instant < g.top, JSON.stringify(g));
+  const m = computeThresholds(80, null, [], null, 100);
+  assert.ok(m.already && m.good >= 80, JSON.stringify(m));
+  assert.ok(!computeThresholds(95, null, [], null, 100).already);
   console.log(t, n);
 });
 

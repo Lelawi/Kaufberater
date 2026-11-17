@@ -16,6 +16,8 @@ test('Packungsgrößen erkennen', () => {
     ['Bosch Smart Home Heizkörper-Thermostat II inkl. 2x AA Batterien', null], ['Philips Hue White Ambiance GU10 LED 4.3W, 350lm (10 St. verfügbar)', null],
     ['Philips Hue GU10 Spot 2 x heller', null], ['Philips Hue Spot, 16 St. Szenen', null], ['Sony WH-1000XM6 inkl. 2 St. Ohrpolster', null],
     ['Philips Hue GU10 3 Stück', 3], ['Philips Hue White Ambiance GU10 2x 4,2W', 2],
+    // 17.11.: Maße sind keine Stückzahl
+    ['Beispielmarke LED-Band Premium, App-/Sprachsteuerung, zuschneidbar, Diffusor, 1,7 cm x 4,5 m', null],
   ];
   for (const [t, n] of cases) assert.equal(packSize(t), n, t);
 });

@@ -37,7 +37,8 @@ export function packSize(title: string | null | undefined): number | null {
   if ((m = t.match(/[\s,(](\d{1,3})\s*x\s*[)\]]/))) return ok(+m[1]);
   if ((m = t.match(/^\s*(?:\[[^\]]*\]\s*)?(\d{1,3})\s*x\s+[a-z]/))) return ok(+m[1]);
   // 4 Stück / 4 Stk am Ende schon oben; „3 Essential GU10 … Lampen“ in Starter-Sets bleibt unerkannt (Set mit Bridge, nicht vergleichbar)
-  if ((m = t.match(/\bx\s*(\d{1,3})\b(?!\s*(?:cm|mm|m|x|\d))/)) && !/\d\s*x\s*\d/.test(t)) return ok(+m[1]);
+  // nicht bei Maßen „1,7 cm x 4,5 m“ (17.11.: als 4er-Pack erkannt) – Zahl mit Komma/Einheit davor oder dahinter
+  if ((m = t.match(/(?<!(?:cm|mm|m)\s*)\bx\s*(\d{1,3})\b(?![.,]\d)(?!\s*(?:cm|mm|m|x|\d))/)) && !/\d\s*x\s*\d/.test(t)) return ok(+m[1]);
   return null;
 }
 

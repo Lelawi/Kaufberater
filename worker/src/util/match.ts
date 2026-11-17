@@ -51,6 +51,11 @@ const ACCESSORY = [
   'coque', 'etui', 'housse', 'support', 'chargeur', 'cable', 'telecommande', 'funda', 'protector', 'custodia', 'pellicola',
   'kompatibel', 'compatible', 'compatibile', 'passend', 'replacement', 'dummy', 'attrappe', 'mockup', 'leergehause',
 ];
+/** Zubehör in zusammengesetzten Wörtern („Staubschutzcover“, „Hardcase“, „Potentiometer-Drehknopf“) – 17.11.:
+ *  Abdeckung, Koffer und Ersatz-Drehknopf bekamen 0,92 wie das Gerät selbst */
+const ACCESSORY_STEMS = ['cover', 'case', 'hulle', 'huelle', 'tasche', 'staubschutz', 'schutzhaube', 'haube', 'drehknopf', 'knopf',
+  'potentiometer', 'fader', 'kappe', 'abdeckung', 'koffer', 'decksaver', 'flightcase', 'bag', 'sleeve', 'knob'];
+const UNIT_CODE = /^\d+(?:HZ|GB|TB|MB|W|LM|K|V|MM|CM|M|MAH|MP|P|FPS|ZOLL|X|G|KG|L|ML)$/;
 // Leuchten statt Leuchtmittel (Hue-Leuchtenserien u. a.) – nur ein Treffer, wenn das gesuchte Produkt selbst so heißt
 const FIXTURE = ['leuchte', 'deckenleuchte', 'pendelleuchte', 'stehleuchte', 'tischleuchte', 'wandleuchte', 'einbauspot', 'aufbauspot',
   'erweiterungsspot', 'strahler', 'lichtleiste', 'buckram', 'pillar', 'adore', 'runner', 'centris', 'argenta', 'fugato', 'xamento', 'milliskin',
@@ -97,12 +102,22 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
     if (i >= 0 && i < keyPos) return true;
     return modelSegWords.has(a);
   };
-  const acc = ACCESSORY.find((a) => tw.has(a) && !pw.has(a) && accBeforeModel(a));
+  const acc = ACCESSORY.find((a) => tw.has(a) && !pw.has(a) && accBeforeModel(a))
+    ?? [...tw].find((w) => w.length > 4 && !pw.has(w) && ACCESSORY_STEMS.some((st) => (w.endsWith(st) || w.startsWith(st)) && !pw.has(st)));
+  // Bundle („… + anderes Gerät“): anderer Preis, kein Vergleich – „+ M“/„[+M]“ (Matter) zählt nicht
+  const bundle = !/\+\s*[a-z]{3,}/i.test(p.name) && /\s\+\s*(?!matter\b)[A-Za-z][A-Za-z0-9-]{2,}/i.test(title);
+  // Ersatzteil mit Liste passender Geräte (viele fremde Modellnummern im Titel)
+  const ownKeys = modelKeys(p);
+  const codes = new Set((title.toUpperCase().match(/[A-Z0-9][A-Z0-9-]{2,}/g) ?? []).map((c) => c.replace(/-/g, ''))
+    .filter((c) => /\d/.test(c) && /[A-Z]/.test(c) && !UNIT_CODE.test(c) && !ownKeys.some((k) => c.includes(k) || k.includes(c))));
+  const partsList = codes.size >= 3;
   const forPattern = /\b(für|fur|for|pour|para|per)\b/i.test(title) && !/\b(für|for|pour)\b/i.test(p.name);
   let penalty = 1;
   let penaltyReason = '';
   const fix = FIXTURE.find((f) => tw.has(f) && !pw.has(f));
   if (acc) { penalty = 0.15; penaltyReason = ` – Zubehör? (${acc})`; }
+  else if (partsList) { penalty = 0.3; penaltyReason = ' – Ersatzteil für mehrere Geräte?'; }
+  else if (bundle) { penalty = 0.5; penaltyReason = ' – Bundle mit anderem Gerät'; }
   else if (fix) { penalty = 0.5; penaltyReason = ` – Leuchte statt Leuchtmittel? (${fix})`; }
   else if (forPattern) { penalty = 0.6; penaltyReason = ' – "für …" im Titel'; }
 
@@ -151,6 +166,7 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
   if (!nameWords.length) return { score: 0, reason: 'kein Name' };
   // Matter-Kennzeichnung: „[+M]“ und „Matter“ sind dasselbe
   if (tw.has('matter')) tw.add('+m');
+  if (/\+\s+m\b/i.test(title)) tw.add('+m');   // „Kompakt + M“ mit Leerzeichen
   if (tw.has('+m')) tw.add('matter');
   // Sehr kurze Wörter („+M“, „II“) nur als ganzes Wort zählen – sonst passt „M“ zu jedem Titel mit einem M
   // Reine Zahlen („1700“) nur als ganzes Wort – sonst passt „1700“ zu „LGA1700“ oder „1700W“
