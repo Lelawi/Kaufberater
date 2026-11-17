@@ -145,9 +145,13 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     // verglichen wird dann der Preis pro benötigtem Stück (eff), gemeldet auch die Gesamtsumme (sum)
     const quantity = Math.max(1, Number(p.quantity ?? 1));
     const multi = quantity > 1;
-    const pickBest = (list: typeof enriched): Cand | undefined => {
+    // by = 'eff': nach Endpreis (Bestpreis in der App), 'raw': nach Rohpreis (Stufe der Meldung, Tiefstpreis)
+    const pickBest = (list: typeof enriched, by: 'eff' | 'raw' = 'eff'): Cand | undefined => {
       const ok = list.filter(trusted);
-      if (!multi) { const e = ok[0]; return e ? { ...e, sum: e.eff } : undefined; }
+      if (!multi) {
+        const e = by === 'raw' ? [...ok].sort((a, b) => Number(a.o.total) - Number(b.o.total) || a.eff - b.eff)[0] : ok[0];
+        return e ? { ...e, sum: e.eff, raw: Number(e.o.total), rawSum: Number(e.o.total) } : undefined;
+      }
       // Gruppe = eine Bestellung: Händler + Land. Marktplätze (eBay …) haben je Angebot einen anderen Verkäufer →
       // nie mit anderen Angeboten kombinieren, Versand je Packung (Review 11.11.: 13× dasselbe eBay-3er mit einmal Versand)
       const byShop = new Map<string, typeof enriched>();
@@ -165,20 +169,23 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         const main = group.find((e) => e.o.id === b.items[0].id)!;
         // Gutscheine/Cashback auf die ganze Bestellung (nicht je Packung)
         const ef = effective({ ...main.o, price: b.goods, shipping: b.shipping, total: b.total }, vouchers, rates, p.name);
-        const c: Cand = { o: main.o, eff: round2(ef.eff / quantity), sum: ef.eff, notes: ef.notes, basket: b };
-        if (!bestC || c.sum < bestC.sum) bestC = c;
+        const c: Cand = { o: main.o, eff: round2(ef.eff / quantity), sum: ef.eff, notes: ef.notes, basket: b, raw: round2(b.total / quantity), rawSum: b.total };
+        if (!bestC || (by === 'raw' ? c.rawSum < bestC.rawSum : c.sum < bestC.sum)) bestC = c;
       }
       return bestC;
     };
     const best = pickBest(newOnes);
     const bestR = p.include_refurb ? pickBest(refurb) : undefined;
+    // Stufen und Tiefstpreis nach Rohpreis: Gutscheine/Cashback/Aktionen haben oft Bedingungen → nur als „effektiv …“ im Text
+    const bestRaw = pickBest(newOnes, 'raw');
+    const bestRRaw = p.include_refurb ? pickBest(refurb, 'raw') : undefined;
     const prevLowest = p.lowest_seen;
     const basketJson = best?.basket ? { ...best.basket, effective: best.sum, unit: best.eff, need: quantity, text: basketText(best.basket) } : null;
     await sql`update kb_products set
       best_price = ${best?.eff ?? null}, best_offer_id = ${best?.o.id ?? null}, best_basket = ${basketJson ? sql.json(basketJson as any) : null},
       best_refurb_price = ${bestR?.eff ?? null}, best_refurb_offer_id = ${bestR?.o.id ?? null},
-      lowest_seen = case when ${best?.eff ?? null}::numeric is not null and (lowest_seen is null or ${best?.eff ?? null}::numeric < lowest_seen) then ${best?.eff ?? null}::numeric else lowest_seen end,
-      lowest_seen_at = case when ${best?.eff ?? null}::numeric is not null and (lowest_seen is null or ${best?.eff ?? null}::numeric < lowest_seen) then now() else lowest_seen_at end,
+      lowest_seen = case when ${bestRaw?.raw ?? null}::numeric is not null and (lowest_seen is null or ${bestRaw?.raw ?? null}::numeric < lowest_seen) then ${bestRaw?.raw ?? null}::numeric else lowest_seen end,
+      lowest_seen_at = case when ${bestRaw?.raw ?? null}::numeric is not null and (lowest_seen is null or ${bestRaw?.raw ?? null}::numeric < lowest_seen) then now() else lowest_seen_at end,
       last_checked_at = now()
       where id = ${p.id}`;
 
@@ -210,30 +217,28 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     const levels: [string, number | null][] = [['instant', p.threshold_instant], ['top', p.threshold_top], ['good', p.threshold_good ?? (p.max_price ? p.max_price / quantity : null)]];
     const where = (c: Cand) => `${c.o.shop}${c.o.country !== 'DE' ? ` (${c.o.country})` : ''}`;
     const perPiece = multi ? '/Stück' : '';
-    for (const cand of [best, bestR].filter(Boolean) as Cand[]) {
+    for (const cand of [bestRaw, bestRRaw].filter(Boolean) as Cand[]) {
       const isRefurb = cand.o.condition !== 'new';
       // Wunschpreis erreicht → dafür kommt unten eine eigene Meldung, nicht zweimal für dasselbe Angebot melden
-      if (p.max_price && cand.sum <= p.max_price) continue;
-      const hit = levels.find(([, t]) => t !== null && cand.eff <= (isRefurb ? t! * 0.9 : t!));
+      if (p.max_price && cand.rawSum <= p.max_price) continue;
+      const hit = levels.find(([, t]) => t !== null && cand.raw <= (isRefurb ? t! * 0.9 : t!));
       if (!hit) continue;
-      // Preis nur dank Shop-Aktion erreicht → höchstens „Top-Preis“: Aktionen haben oft Bedingungen, die wir nicht sehen
-      const viaPromo = /Aktion „/.test(cand.notes ?? '');
-      const level = viaPromo && hit[0] === 'instant' ? 'top' : hit[0];
+      const level = hit[0];
       // nicht erneut melden, wenn in den letzten 7 Tagen schon ein gleich guter/besserer Preis gemeldet wurde – und auch
       // nicht bei jedem Euro weniger: erneut erst ab ≥ 2 % oder ≥ 5 € Verbesserung (Review 17.11.: Meldungsflut bei
       // schwankenden Preisen). Eine höhere Stufe kommt trotz Sperre durch (Review 11.11.).
-      const priceKey = cand.eff.toFixed(2);
+      const priceKey = cand.raw.toFixed(2);
       const sameOrHigher = LEVEL_ORDER.slice(LEVEL_ORDER.indexOf(level));
       const [prev] = await sql`select min(split_part(dedup_key, ':', 5)::numeric) as m from kb_alerts where product_id = ${p.id} and kind = 'threshold'
         and created_at > now() - interval '7 days'
         and dedup_key like ${`thr:${p.id}:${isRefurb ? 'r' : 'n'}:%`}
         and split_part(dedup_key, ':', 4) in ${sql(sameOrHigher)}`;
-      if (prev?.m != null && !enoughBetter(Number(prev.m), cand.eff, multi)) continue;
+      if (prev?.m != null && !enoughBetter(Number(prev.m), cand.raw, multi)) continue;
       // Deal-Meldung zum selben Shop/Preis in den letzten 6 Std. → keine zweite Meldung
-      if (await similarRecentAlert(p.id, cand.eff, cand.o.shop, level)) continue;
+      if (await similarRecentAlert(p.id, cand.raw, cand.o.shop, level)) continue;
       stats.alerts += await createAlert({
         userId: p.user_id, productId: p.id, kind: 'threshold', level: level as any,
-        title: `${LEVEL_LABEL[level]} ${isRefurb ? '(Refurbished) ' : ''}${p.name}: ${fmtEur(cand.eff)}${perPiece}`,
+        title: `${LEVEL_LABEL[level]} ${isRefurb ? '(Refurbished) ' : ''}${p.name}: ${fmtEur(cand.raw)}${perPiece}`,
         body: (cand.basket
           ? `${quantity} Stück bei ${where(cand)}: ${basketText(cand.basket)} = ${fmtEur(cand.basket.total)}` +
             (cand.notes ? `, nach ${cand.notes} effektiv ${fmtEur(cand.sum)}` : '') +
@@ -243,31 +248,31 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
           (fakeNote && !isRefurb ? ` ${fakeNote}` : ''),
         // Monat im Schlüssel: derselbe Preis später wieder (Black Week → Weihnachten) wird erneut gemeldet
         url: cand.o.url, dedupKey: `thr:${p.id}:${isRefurb ? 'r' : 'n'}:${level}:${priceKey}:${monthKey()}`,
-        data: { price: cand.eff, shop: cand.o.shop },
+        data: { price: cand.raw, shop: cand.o.shop },
       });
     }
 
     // 4b) Eigener Wunschpreis (Höchstpreis) erreicht – unabhängig von den Schwellen
     if (p.max_price) {
-      for (const cand of [best, bestR].filter(Boolean) as Cand[]) {
-        if (cand.sum > p.max_price) continue;
+      for (const cand of [bestRaw, bestRRaw].filter(Boolean) as Cand[]) {
+        if (cand.rawSum > p.max_price) continue;
         const isRefurb = cand.o.condition !== 'new';
         stats.alerts += await createAlert({
           userId: p.user_id, productId: p.id, kind: 'threshold', level: 'instant',
-          title: `Dein Wunschpreis ist erreicht: ${p.name}${isRefurb ? ' (Refurbished)' : ''} für ${fmtEur(cand.sum)}${multi ? ` (${quantity} Stück)` : ''}`,
-          body: `Bei ${where(cand)}${cand.basket ? `: ${basketText(cand.basket)}` : ''}. Dein Höchstpreis: ${fmtEur(p.max_price)}.` + (cand.notes ? ` Effektiv nach ${cand.notes}.` : ''),
-          url: cand.o.url, dedupKey: `max:${p.id}:${isRefurb ? 'r' : 'n'}:${Math.floor(cand.sum / 10)}:${monthKey()}`,
+          title: `Dein Wunschpreis ist erreicht: ${p.name}${isRefurb ? ' (Refurbished)' : ''} für ${fmtEur(cand.rawSum)}${multi ? ` (${quantity} Stück)` : ''}`,
+          body: `Bei ${where(cand)}${cand.basket ? `: ${basketText(cand.basket)}` : ''}. Dein Höchstpreis: ${fmtEur(p.max_price)}.` + (cand.notes ? ` Effektiv ${fmtEur(cand.sum)} nach ${cand.notes}.` : ''),
+          url: cand.o.url, dedupKey: `max:${p.id}:${isRefurb ? 'r' : 'n'}:${Math.floor(cand.rawSum / 10)}:${monthKey()}`,
         });
       }
     }
 
     // 5) Ohne Schwellen (noch keine Analyse): neuer Tiefstpreis deutlich unter bisherigem Minimum
-    if (best && p.threshold_good === null && p.max_price === null && prevLowest && best.eff < prevLowest * 0.95) {
+    if (bestRaw && p.threshold_good === null && p.max_price === null && prevLowest && bestRaw.raw < prevLowest * 0.95) {
       stats.alerts += await createAlert({
         userId: p.user_id, productId: p.id, kind: 'threshold', level: 'good',
-        title: `Neuer Tiefstpreis: ${p.name} für ${fmtEur(best.eff)}${perPiece}`,
-        body: `Bei ${best.o.shop}. Bisheriges Minimum seit Beobachtung: ${fmtEur(prevLowest)}.`,
-        url: best.o.url, dedupKey: `low:${p.id}:${Math.floor(best.eff)}:${monthKey()}`,
+        title: `Neuer Tiefstpreis: ${p.name} für ${fmtEur(bestRaw.raw)}${perPiece}`,
+        body: `Bei ${bestRaw.o.shop}. Bisheriges Minimum seit Beobachtung: ${fmtEur(prevLowest)}.`,
+        url: bestRaw.o.url, dedupKey: `low:${p.id}:${Math.floor(bestRaw.raw)}:${monthKey()}`,
       });
     }
 
@@ -276,7 +281,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     if (best && rec?.best_buy_date) {
       const d0 = new Date(rec.best_buy_date).getTime();
       if (Date.now() >= d0 - 12 * 3600_000 && Date.now() <= d0 + 4 * 86400_000) {
-        const lvl = levels.find(([, t]) => t !== null && best.eff <= t!)?.[0];
+        const lvl = levels.find(([, t]) => t !== null && (bestRaw ?? best).raw <= t!)?.[0];
         stats.alerts += await createAlert({
           userId: p.user_id, productId: p.id, kind: 'analysis', level: lvl === 'instant' || lvl === 'top' ? 'top' : lvl === 'good' ? 'good' : 'info',
           title: `Jetzt ist der empfohlene Kaufzeitraum: ${p.name}`,
@@ -332,7 +337,7 @@ export function offerMaxAge(now = new Date()): string {
   return hotWindow(now) ? '2 hours' : '24 hours';
 }
 
-type Cand = { o: Offer; eff: number; sum: number; notes: string; basket?: Basket };
+type Cand = { o: Offer; eff: number; sum: number; notes: string; basket?: Basket; raw: number; rawSum: number };
 
 /**
  * Endpreis nach Abzügen. Nie global (Regel): Gutscheine/Aktionen/Cashback nur bei exakt passendem Shop,
