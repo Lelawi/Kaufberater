@@ -7,6 +7,7 @@ import { fmtEur } from '../util/money.ts';
 import { PRICE_ERROR } from '../util/plausible.ts';
 import { conditionFromTitle } from '../adapters/common.ts';
 import { offerMaxAge } from './evaluate.ts';
+import { hotWindow, berlinDate } from '../util/events.ts';
 
 function roundNice(v: number): number {
   if (v >= 1000) return Math.round(v / 10) * 10 - 1;     // 2.499 statt 2.503
@@ -17,6 +18,19 @@ function quantile(xs: number[], q: number): number {
   const s = [...xs].sort((a, b) => a - b);
   const i = (s.length - 1) * q; const lo = Math.floor(i); const hi = Math.ceil(i);
   return s[lo] + (s[hi] - s[lo]) * (i - lo);
+}
+
+/** Steigende Tendenz im November/in der heißen Phase ignorieren: Händler heben vor Black Friday an, „gut“ = aktueller
+ *  Preis − 1 € würde dann beim aufgeblähten Preis melden */
+export function usableTrend(trend: string | null, now = new Date()): string | null {
+  if (trend !== 'rising') return trend;
+  return berlinDate(now)[1] === 11 || hotWindow(now) ? null : trend;
+}
+
+/** Bestehende vorläufige Schwellen nur senken (je Stufe das Minimum); höher nur bei der täglichen Neuberechnung */
+export function lowerOnly(old: { good: number | null; top: number | null; instant: number | null }, t: { good: number; top: number; instant: number }) {
+  if (old.good == null || old.top == null || old.instant == null) return t;
+  return { good: Math.min(old.good, t.good), top: Math.min(old.top, t.top), instant: Math.min(old.instant, t.instant) };
 }
 
 export function computeThresholds(best: number, historyMin: number | null, dealPrices: number[], trend: string | null = null, market: number | null = null) {
@@ -72,11 +86,18 @@ export function computeThresholds(best: number, historyMin: number | null, dealP
 export async function runAutoThresholds(opts: { productId?: string } = {}) {
   const sql = await db();
   const products = await sql`
-    select id, user_id, name, best_price, lowest_seen, quantity, price_trend from kb_products
+    select id, user_id, name, best_price, lowest_seen, quantity, price_trend, threshold_good, threshold_top, threshold_instant, threshold_source from kb_products
     where status = 'watching' and not thresholds_manual and best_price is not null
       and (threshold_good is null or threshold_source = 'auto')
       and (${opts.productId ?? null}::uuid is null or id = ${opts.productId ?? null}::uuid)`;
   let set = 0;
+  // Einmal setzen, danach nur senken – höchstens einmal am Tag komplett neu (Review 17.11.: bei jedem Lauf aus dem
+  // aktuellen Bestpreis neu berechnet; war der günstigste Shop ausverkauft, stiegen die Schwellen mit)
+  const [y, m, d] = berlinDate();
+  const today = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  // Lauf für ein einzelnes Produkt (Änderung in der App, z. B. Menge) darf immer neu rechnen, zählt aber nicht als Tageslauf
+  const [done] = opts.productId ? [] : await sql`select 1 from kb_runs where stats->'autothresholds'->>'full' = ${today} limit 1`;
+  const full = !!opts.productId || !done;
   for (const p of products) {
     // Nur Deals, die in Deutschland erreichbar waren (Auslands-Deals sind mit einer Notiz markiert)
     // Mengen-Produkte: alles pro Stück (Packungspreis / Packungsgröße); sonst nur Einzelstück-Deals
@@ -104,7 +125,9 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
                              and not (o.shop_reviews is not null and o.shop_reviews < 20)
                              and not (o.shop_rating is not null and o.shop_rating < 3.5 and coalesce(o.shop_reviews, 0) < 500)`;
     const market = mk?.n >= 5 && mk.med ? Number(mk.med) : null;
-    const t = computeThresholds(Number(p.best_price), seen.length ? Math.min(...seen) : null, deals.map((d) => Number(d.price)), p.price_trend, market);
+    const computed = computeThresholds(Number(p.best_price), seen.length ? Math.min(...seen) : null, deals.map((d) => Number(d.price)), usableTrend(p.price_trend), market);
+    const hasAuto = p.threshold_source === 'auto' && p.threshold_good != null;
+    const t = { ...computed, ...(hasAuto && !full ? lowerOnly({ good: num(p.threshold_good), top: num(p.threshold_top), instant: num(p.threshold_instant) }, computed) : {}) };
     const upd = await sql`update kb_products set threshold_good = ${t.good}, threshold_top = ${t.top}, threshold_instant = ${t.instant}, threshold_source = 'auto'
               where id = ${p.id} and not thresholds_manual and (threshold_good is null or threshold_source = 'auto')
                 and (threshold_good, threshold_top, threshold_instant) is distinct from (${t.good}::numeric, ${t.top}::numeric, ${t.instant}::numeric)
@@ -119,5 +142,7 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
     });
     set++;
   }
-  return { set };
+  return full && !opts.productId ? { set, full: today } : { set };
 }
+
+const num = (x: unknown) => (x == null ? null : Number(x));

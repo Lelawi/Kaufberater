@@ -65,3 +65,13 @@ test('Gültigkeit einer Shop-Aktion', () => {
   // 23:30 MEZ zählt noch zum selben Tag
   assert.equal(promoValidUntil('10 % auf alles', new Date('2026-11-24T22:30:00Z')), '2026-11-24');
 });
+
+import { usableTrend, lowerOnly } from '../src/jobs/autothresholds.ts';
+test('Vorläufige Schwellen: Tendenz im November, nur senken', () => {
+  assert.equal(usableTrend('rising', new Date('2026-11-17T12:00:00Z')), null);
+  assert.equal(usableTrend('rising', new Date('2026-12-01T12:00:00Z')), null);   // noch Black Week
+  assert.equal(usableTrend('rising', new Date('2026-09-10T12:00:00Z')), 'rising');
+  assert.equal(usableTrend('falling', new Date('2026-11-17T12:00:00Z')), 'falling');
+  assert.deepEqual(lowerOnly({ good: 100, top: 95, instant: 90 }, { good: 110, top: 93, instant: 91 }), { good: 100, top: 93, instant: 90 });
+  assert.deepEqual(lowerOnly({ good: null, top: null, instant: null }, { good: 110, top: 100, instant: 90 }), { good: 110, top: 100, instant: 90 });
+});
