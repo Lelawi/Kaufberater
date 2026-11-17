@@ -2,7 +2,7 @@
 import { db } from './db.ts';
 import { runDiscovery } from './jobs/discovery.ts';
 import { runChecks } from './jobs/check.ts';
-import { runDeals } from './jobs/deals.ts';
+import { runDeals, runDealFeed } from './jobs/deals.ts';
 import { runEvaluate } from './jobs/evaluate.ts';
 import { deliverAlerts } from './jobs/alerts.ts';
 import { runQuickChecks } from './jobs/quickcheck.ts';
@@ -35,6 +35,8 @@ export async function runAll(arg = '') {
     if (['all', 'discovery', 'product'].includes(mode)) await step('discovery', () => runDiscovery(deadline, productId));
     if (['all', 'checks', 'product'].includes(mode)) await step('checks', () => runChecks(deadline, { productId }));
     // Deal-Portale: jedes Produkt höchstens etwa stündlich, pro Lauf begrenzte Anzahl (schont die Portale)
+    // Deal-Feed (neueste mydealz-Deals, lokal abgeglichen) vor der Suche je Produkt
+    if (['all', 'deals'].includes(mode)) await step('dealfeed', () => runDealFeed(deadline));
     if (['all', 'deals', 'product'].includes(mode)) await step('deals', () => runDeals(deadline, { productId }));
     if (mode === 'quick') { await step('quickchecks', () => runQuickChecks(deadline)); await step('alerts', () => deliverAlerts()); return; }
     await step('quickchecks', () => runQuickChecks(deadline));
