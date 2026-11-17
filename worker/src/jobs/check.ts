@@ -1,5 +1,5 @@
 // Fällige Abfrageziele abrufen, Angebote speichern, Preisverlauf fortschreiben
-import { db, debugLog } from '../db.ts';
+import { db, debugLog, retryDb } from '../db.ts';
 import { sourceByKey, availableHere, IS_HOME } from '../adapters/registry.ts';
 import { needsHomeUrl } from '../adapters/shops.ts';
 import { toQuery } from '../products.ts';
@@ -44,7 +44,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
     arr.push(l);
     bySource.set(l.source, arr);
   }
-  const stats = { listings: 0, ok: 0, errors: 0, offers: 0, priceChanges: 0 };
+  const stats = { listings: 0, ok: 0, errors: 0, dbErrors: 0, offers: 0, priceChanges: 0 };
   // In der heißen Phase höchstens 25 Minuten bis zur nächsten Abfrage
   const cap = hotWindow() ? 25 : 100_000;
   const debugged = new Set<string>(); // „kein Preis“-Seiten höchstens einmal pro Quelle und Lauf ablegen
@@ -54,14 +54,17 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
     // Gesperrte Antworten in Folge: Eine einzelne Seite mit 403 (z. B. ein entferntes Produkt) soll nicht die ganze Quelle pausieren.
     // Erst wenn zwei Seiten hintereinander gesperrt sind, gilt die Quelle als gesperrt (eine einzelne Seite wartet über ihren eigenen Rückstau).
     let blockedStreak = 0;
+    let sourceGaveUp = false;
     for (const l of listings) {
       if (Date.now() > deadline) return;
       stats.listings++;
+      let fetched = false;
       try {
         const offers = await adapter.fetch(
           { id: l.id, source: l.source, country: l.country, external_id: l.external_id, url: l.url, condition: l.condition, title: l.title },
           toQuery({ id: l.product_id, name: l.p_name, brand: l.p_brand, model: l.p_model, ean: l.p_ean, search_terms: l.p_terms, exclude_terms: l.p_exclude }),
         );
+        fetched = true;
         // Ausgeschlossene Varianten (z. B. „Essential“ nach der Rückfrage) gar nicht erst speichern
         const usable = plausibleOffers(offers.filter((o) => o.shipsToDE !== false && o.price > 0 && !hasExcludedWord(o.title, l.p_exclude)));
         // Preisvergleich liefert plötzlich (fast) nichts, obwohl vorher viele Angebote da waren → Seite vermutlich unvollständig.
@@ -100,6 +103,19 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
         await recordSourceResult(sourceKey, true);
         blockedStreak = 0;
       } catch (e) {
+        // Abruf war erfolgreich, nur die Datenbank hakte (z. B. „too many connections“) → kein Fehler der Quelle
+        // (sonst Rückstau und nach 20 Fehlern abgeschaltet); bald noch einmal versuchen
+        if (fetched) {
+          stats.dbErrors++;
+          console.log('DB-Fehler nach Abruf', sourceKey, (e as Error).message);
+          await retryDb(() => sql`update kb_listings set next_check_at = now() + interval '10 minutes' where id = ${l.id}`).catch(() => {});
+          continue;
+        }
+        try { await handleFetchError(e, l); } catch (dbErr) { stats.dbErrors++; console.log('DB-Fehler im Fehlerpfad', sourceKey, (dbErr as Error).message); }
+        if (sourceGaveUp) return;
+      }
+    }
+    async function handleFetchError(e: unknown, l: DueListing) {
         stats.errors++;
         const isBlock = /blockiert/.test((e as Error).message);
         // 404 erst nach 3 Treffern in Folge abschalten (Shops bauen zu Black Friday Seiten um) – Zähler steht im Fehlertext
@@ -109,6 +125,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
         const msg = ((n404 ? `[404×${n404}] ` : '') + (e as Error).message).slice(0, 500);
         if (isBlock) blockedStreak++;
         const sourceBlocked = isBlock && blockedStreak >= 2;
+        if (sourceBlocked) sourceGaveUp = true; // Quelle für diesen Lauf aufgeben
         // Bei Fehlern seltener versuchen (max. 1x pro Tag), nach 20 Fehlern in Folge deaktivieren.
         // Sperren der ganzen Quelle sind kein Fehler der Seite: höchstens 6 Std. warten und nie deswegen deaktivieren.
         // In der heißen Phase höchstens 60 Min. Rückstau (sonst bis zu 24 Std. – ein Aussetzer kostete den ganzen Tag).
@@ -133,8 +150,6 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
           debugged.add(sourceKey);
           await debugLog((isBlock ? 'gesperrt:' : 'keinpreis:') + sourceKey, { url: be.url, status: be.status, headers: { response: be.headers, sent: be.sentHeaders }, body: be.body }).catch(() => {});
         }
-        if (sourceBlocked) return; // Quelle für diesen Lauf aufgeben
-      }
     }
   }));
   return stats;

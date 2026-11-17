@@ -17,12 +17,13 @@ export async function db(): Promise<Sql> {
   for (const host of hosts) {
     const sql = postgres({
       host, port: 5432, database: 'postgres', username: `kb_worker.${REF}`, password,
-      ssl: 'require', max: 4, connect_timeout: 15, idle_timeout: 20,
+      // Rolle kb_worker darf 10 Verbindungen; Haupt- und Produkt-Läufe laufen parallel → je Prozess höchstens 2
+      ssl: 'require', max: 2, connect_timeout: 15, idle_timeout: 20,
       onnotice: () => {},
       types: { numeric: { to: 1700, from: [1700], serialize: (x: unknown) => String(x), parse: (x: string) => Number(x) } } as any,
     });
     try {
-      await sql`select 1`;
+      await retryDb(() => sql`select 1`);
       sqlInstance = sql;
       return sql;
     } catch (e) {
@@ -31,6 +32,21 @@ export async function db(): Promise<Sql> {
     }
   }
   throw lastErr;
+}
+
+/** „too many connections“ (53300) – kurz warten und erneut versuchen (parallele Läufe geben Verbindungen bald frei) */
+export function isTooMany(e: unknown): boolean {
+  const x = e as { code?: string; message?: string };
+  return x?.code === '53300' || /too many connections/i.test(x?.message ?? '');
+}
+export async function retryDb<T>(fn: () => Promise<T>, tries = 4): Promise<T> {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (e) {
+      if (!isTooMany(e) || i >= tries - 1) throw e;
+      await new Promise((r) => setTimeout(r, 2000 * (i + 1) + Math.random() * 1000));
+    }
+  }
 }
 
 export async function closeDb() {
