@@ -24,7 +24,7 @@ export function shipsToDE(portalCountry: string, merchant: string | null | undef
   return SHIPS_TO_DE.some((s) => m === s || m.startsWith(s));
 }
 
-/** "[eff. 2474,-]", "(effektiv 2.474 €)", "eff. 3440" → 2474 / 3440 */
+/** Effektivpreis aus dem Titel (nur Anzeige, nicht für Stufen/Verlauf): "[eff. 2474,-]", "(effektiv 2.474 €)", "eff. 3440" → 2474 / 3440 */
 export function effectivePrice(title: string): number | null {
   const m = title.match(/\beff(?:ektiv|\.)?\s*:?\s*(\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*(?:,-|€|euro)?/i);
   if (!m) return null;
@@ -47,7 +47,8 @@ export function parsePepperList(html: string, portal: Portal): DealData[] {
       title: String(t.title ?? ''),
       url: `https://${portal.host}/deals/${t.titleSlug ?? 'x'}-${t.threadId}`,
       merchant: t.merchant?.merchantName ?? t.linkHost ?? null,
-      price: effectivePrice(String(t.title ?? '')) ?? (typeof t.price === 'number' && t.price > 0 ? t.price : null),
+      // echter Preis des Deals – „eff. …“ im Titel enthält oft Cashback/Payback/Neukunden-Codes (bleibt nur im Text)
+      price: typeof t.price === 'number' && t.price > 0 ? t.price : null,
       nextBestPrice: typeof t.nextBestPrice === 'number' && t.nextBestPrice > 0 ? t.nextBestPrice : null,
       temperature: typeof t.temperature === 'number' ? t.temperature : null,
       commentCount: t.commentCount ?? null,

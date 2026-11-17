@@ -42,12 +42,11 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
         const importWare = IMPORT_MARKET.test(d.merchant ?? '') || IMPORT_MARKET.test(d.title);
         const pack = packSize(d.title) ?? 1;
         // Mengen-Produkte: Deal-Preis pro Stück vergleichen (Schwellen und Bestpreis gelten dann pro Stück)
-        // „(eff. 9,90 €/Stück)“ ist schon ein Stückpreis – nicht noch einmal durch die Packung teilen (Review 11.11.)
-        const perPieceInTitle = /\beff[^)\]]*\/\s*(?:st(?:ü|ue)ck|stk)/i.test(d.title);
         // Mengen-Produkte: was die BENÖTIGTE Menge mit diesem Deal kostet – nur ganze Packungen, Überschuss zählt mit
         // (11.11.: 5er-Pack für 229 € bei Bedarf 3 als „45,80 €/Stück, sofort zuschlagen“ gemeldet; für 3 Stück zahlt man 229 €)
         const need = Math.max(1, Number(p.quantity ?? 1));
-        const packPrice: number | null = d.price ? (perPieceInTitle ? d.price * pack : d.price) : null;
+        // d.price ist der echte Packungspreis des Deals (nicht „eff. … €/Stück“ aus dem Titel)
+        const packPrice: number | null = d.price ? d.price : null;
         const packsNeeded = multi ? Math.ceil(need / pack) : 1;
         const totalForNeed: number | null = packPrice !== null ? Math.round(packPrice * packsNeeded * 100) / 100 : null;
         const cmp: number | null = d.price ? (multi ? Math.round((totalForNeed ?? 0) / need * 100) / 100 : d.price) : null;
