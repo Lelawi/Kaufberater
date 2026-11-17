@@ -84,7 +84,7 @@ const ACCESSORY = [
 /** Zubehör in zusammengesetzten Wörtern („Staubschutzcover“, „Hardcase“, „Potentiometer-Drehknopf“) – 17.11.:
  *  Abdeckung, Koffer und Ersatz-Drehknopf bekamen 0,92 wie das Gerät selbst */
 const ACCESSORY_STEMS = ['cover', 'case', 'hulle', 'huelle', 'tasche', 'staubschutz', 'schutzhaube', 'haube', 'drehknopf', 'knopf',
-  'potentiometer', 'fader', 'kappe', 'abdeckung', 'koffer', 'decksaver', 'flightcase', 'bag', 'sleeve', 'knob'];
+  'potentiometer', 'fader', 'kappe', 'koffer', 'decksaver', 'flightcase', 'bag', 'sleeve', 'knob'];
 const UNIT_CODE = /^\d+(?:HZ|GB|TB|MB|W|LM|K|V|MM|CM|M|MAH|MP|P|FPS|ZOLL|X|G|KG|L|ML)$/;
 // Leuchten statt Leuchtmittel (Hue-Leuchtenserien u. a.) – nur ein Treffer, wenn das gesuchte Produkt selbst so heißt
 const FIXTURE = ['leuchte', 'deckenleuchte', 'pendelleuchte', 'stehleuchte', 'tischleuchte', 'wandleuchte', 'einbauspot', 'aufbauspot',
@@ -132,7 +132,7 @@ export function matchTitle(p: ProductQuery, title: string, extra: { gtin?: strin
     return modelSegWords.has(a);
   };
   const acc = ACCESSORY.find((a) => tw.has(a) && !pw.has(a) && accBeforeModel(a))
-    ?? [...tw].find((w) => w.length > 4 && !pw.has(w) && ACCESSORY_STEMS.some((st) => (w.endsWith(st) || w.startsWith(st)) && !pw.has(st)));
+    ?? [...tw].find((w) => w.length > 4 && !pw.has(w) && accBeforeModel(w) && ACCESSORY_STEMS.some((st) => (w.endsWith(st) || w.startsWith(st)) && !pw.has(st)));
   // Bundle („… + anderes Gerät“): anderer Preis, kein Vergleich – „+ M“/„[+M]“ (Matter) zählt nicht
   const bundle = !/\+\s*[a-z]{3,}/i.test(p.name) && /\s\+\s*(?!matter\b)[A-Za-z][A-Za-z0-9-]{2,}/i.test(title);
   // Ersatzteil mit Liste passender Geräte (viele fremde Modellnummern im Titel)

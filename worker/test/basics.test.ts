@@ -24,6 +24,8 @@ test('Produktabgleich', () => {
   assert.ok(matchTitle(ctl, 'Fremdmarke Musterton MX-500 Hardcase, schützendes Gehäuse').score < 0.75);
   assert.ok(matchTitle(ctl, 'Musterton MX-500 + Musterton Kopfhörer HP-20').score < 0.75);
   assert.ok(matchTitle(ctl, 'Musterton AB900 MX500 MX600 CD123 ZZ7 Ersatz Potentiometer-Drehknopf').score < 0.75);
+  // Ausstattung nach dem Komma ist kein Zubehör („120° Abdeckung“ = Erfassungsbereich)
+  assert.ok(matchTitle({ name: 'Musterfirma Sensor ZX400', model: 'ZX400' }, 'Musterfirma Sensor ZX400, Mehrzonen mit Funk, 120° Abdeckung').score >= 0.75);
   const plug = { name: 'Musterfirma Steckdose kompakt +M', brand: 'Musterfirma' };
   assert.ok(matchTitle(plug, 'Musterfirma Steckdose Kompakt + M').score >= 0.75);
   assert.ok(matchTitle(plug, 'Musterfirma Smart Home Steckdose kompakt [+M], mit Matter').score >= 0.75);
