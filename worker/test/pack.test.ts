@@ -65,3 +65,13 @@ test('Preistendenz', () => {
   assert.equal(computeTrend(days(180, (i) => 2000 + (i % 7) * 10), today)?.trend, 'stable');
   assert.equal(computeTrend(days(40, () => 100), today), null);   // zu kurz
 });
+
+test('Eigenschaftswörter sind keine Packungsgröße', () => {
+  for (const t of ['Musterton MX-500 4x faster Wi-Fi', 'Musterton Kamera 2x more light', 'Musterton 5x optical zoom', 'Musterton 3x brighter', 'Musterton 2x mehr Leistung'])
+    assert.equal(packSize(t), null, t);
+  assert.equal(packSize('3x Musterton GU10'), 3);
+  assert.equal(packSize('Musterton MX-500 (4x)'), 4);
+});
+test('Eigenschaftswort am Titelanfang', () => {
+  assert.equal(packSize('4x faster WLAN Musterton MX-500'), null);
+});

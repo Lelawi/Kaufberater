@@ -30,12 +30,13 @@ export function packSize(title: string | null | undefined): number | null {
   if ((m = t.match(/\b(?:pack|packung|set|box)\s+(?:of|mit|à|a|x)\s+(\d{1,3})\b/))) return ok(+m[1]);
   // 3 Stück, 3 Stk., 3 St., 1 St – nicht „inkl. 2 St. Ohrpolster“, „bis zu 10 St.“, „(10 St. verfügbar)“, „16 St. Szenen“
   if ((m = t.match(/(?<!(?:inkl\.?|inklusive|mit|bis zu|max\.?)\s*)\b(\d{1,3})\s*(?:stuck|stueck|stk|st)\b\.?(?!\.?\s*(?:verfugbar|verfuegbar|auf lager|lagernd|szenen|ohrpolster|batterie|akku))/))) return ok(+m[1]);
+  // Englische/deutsche Eigenschaftswörter („4x faster“, „2x more light“, „5x optical zoom“) sind keine Packungsgröße
   // SET 3x …, 3x GU10, 3x350lm, 2x 4,7W, (… 3x) – aber nicht Maße wie 5x5.5x5 cm und nicht Beigaben/Eigenschaften
   // („inkl. 2x AA Batterien“, „2 x heller“, „8x Lichtszenen“, „ersetzt 2x 50W“, „2x Bluetooth“) – Review 11.11.
   if (/(?:inkl\.?|inklusive|mit|ersetzt|bis zu)\s*\d{1,3}\s*x\b/.test(t)) t = t.replace(/(?:inkl\.?|inklusive|mit|ersetzt|bis zu)\s*\d{1,3}\s*x\s*[^,;|()]*/g, ' ');
-  if ((m = t.match(/\b(\d{1,3})\s*x\s*(?!heller|lichtszenen|szenen|bluetooth|zigbee|wlan|wifi|aa\b|aaa\b|batterie|akku|schneller|leiser|starker|staerker|hdmi|usb|lan|sata|pci|thunderbolt|displayport|dp\b|ethernet|rj|xlr|kern|core|zoom|optisch|digital|gb|tb|mb|ghz|mhz)(?=gu\d|e\d{2}|[a-z]|\d+(?:[.,]\d+)?\s*(?:lm|w|watt|lumen)\b)/)) && !/\d\s*x\s*\d+(?:[.,]\d+)?\s*x/.test(t)) return ok(+m[1]);
+  if ((m = t.match(/\b(\d{1,3})\s*x\s*(?!heller|lichtszenen|szenen|bluetooth|zigbee|wlan|wifi|aa\b|aaa\b|batterie|akku|schneller|leiser|starker|staerker|hdmi|usb|lan|sata|pci|thunderbolt|displayport|dp\b|ethernet|rj|xlr|kern|core|zoom|optisch|optical|digital|gb|tb|mb|ghz|mhz|faster|more|better|brighter|longer|louder|stronger|quieter|larger|bigger|smaller|higher|wider|speed|times|mehr|weniger|besser|laenger|langer|groesser|grosser|hoher|hoeher|breiter|lauter|leistung|power|performance|magnif|vergroesserung|vergrosserung)(?=gu\d|e\d{2}|[a-z]|\d+(?:[.,]\d+)?\s*(?:lm|w|watt|lumen)\b)/)) && !/\d\s*x\s*\d+(?:[.,]\d+)?\s*x/.test(t)) return ok(+m[1]);
   if ((m = t.match(/[\s,(](\d{1,3})\s*x\s*[)\]]/))) return ok(+m[1]);
-  if ((m = t.match(/^\s*(?:\[[^\]]*\]\s*)?(\d{1,3})\s*x\s+[a-z]/))) return ok(+m[1]);
+  if ((m = t.match(/^\s*(?:\[[^\]]*\]\s*)?(\d{1,3})\s*x\s+(?!(?:faster|more|better|brighter|longer|louder|stronger|quieter|larger|bigger|smaller|higher|wider|optical|zoom|mehr|weniger|besser|schneller|heller|leiser)\b)[a-z]/))) return ok(+m[1]);
   // 4 Stück / 4 Stk am Ende schon oben; „3 Essential GU10 … Lampen“ in Starter-Sets bleibt unerkannt (Set mit Bridge, nicht vergleichbar)
   // nicht bei Maßen „1,7 cm x 4,5 m“ (17.11.: als 4er-Pack erkannt) – Zahl mit Komma/Einheit davor oder dahinter
   if ((m = t.match(/(?<!(?:cm|mm|m)\s*)\bx\s*(\d{1,3})\b(?![.,]\d)(?!\s*(?:cm|mm|m|x|\d))/)) && !/\d\s*x\s*\d/.test(t)) return ok(+m[1]);
