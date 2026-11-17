@@ -9,6 +9,7 @@ import { IMPORT_MARKET, PRICE_ERROR } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
 import { packSize } from '../util/pack.ts';
 import { conditionFromTitle } from '../adapters/common.ts';
+import { effectiveThresholds } from './sanity.ts';
 
 const CONDITION_LABEL: Record<string, string> = { refurbished: 'Refurbished', bware: 'B-Ware/Vorführware', used: 'Gebraucht' };
 
@@ -32,6 +33,8 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
     const q = toQuery(p);
     const multi = (p.quantity ?? 1) > 1;
     await sql`update kb_products set deals_checked_at = now() where id = ${p.id}`;
+    // plausibilisierte Schwellen (wie in der Bewertung)
+    const th = await effectiveThresholds(p);
     await Promise.all(adapters.map(async (ad) => {
       let deals;
       try { deals = await ad.search(q); await recordSourceResult(ad.key, true); }
@@ -79,9 +82,9 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
         // Nicht-Neuware nur melden, wenn das Produkt auch Refurbished/B-Ware zulässt – dann gegen die Refurb-Schwellen (× 0,9)
         if (isNew && fresh && !d.expired && !d.foreign && !bundle && (!used || p.include_refurb)) {
           const f = used ? 0.9 : 1;
-          const tGood = p.threshold_good ? p.threshold_good * f : null;
-          const tTop = p.threshold_top ? p.threshold_top * f : null;
-          const tInstant = p.threshold_instant ? p.threshold_instant * f : null;
+          const tGood = th.good ? th.good * f : null;
+          const tTop = th.top ? th.top * f : null;
+          const tInstant = th.instant ? th.instant * f : null;
           // Höchstpreis gilt für die ganze Menge → pro Stück umrechnen
           const maxUnit = p.max_price ? (multi ? p.max_price / p.quantity : p.max_price) : null;
           const ref = Math.max(tGood ?? 0, maxUnit ?? 0) || (used ? p.best_refurb_price ?? (p.best_price ? p.best_price * f : null) : p.best_price);

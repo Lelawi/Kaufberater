@@ -110,3 +110,21 @@ test('Preis-Parser: JSON-LD mit vielen Nachkommastellen, Plausibilität', () => 
   assert.ok(!absurdPrice(32, 30, 28));
   assert.ok(!absurdPrice(80, null, null));
 });
+
+import { clampThresholds } from '../src/jobs/sanity.ts';
+test('Analyse-Schwellen plausibilisieren', () => {
+  const nov = new Date('2026-11-17T12:00:00Z');
+  // „gut“ über dem Normalpreis → 0,97 × min(Preis am Analysetag, 30-Tage-Median)
+  const t = clampThresholds({ good: 105, top: 99, instant: 95 }, { atAnalysis: 100, median30: 102, low90: 96, days90: 60 }, null, nov);
+  assert.deepEqual(t, { good: 97, top: 94.09, instant: 91.26 });
+  assert.ok(t.good! > t.top! && t.top! > t.instant!);
+  // schon plausibel → unverändert
+  assert.deepEqual(clampThresholds({ good: 90, top: 85, instant: 80 }, { atAnalysis: 100, median30: 102, low90: 96, days90: 60 }, null, nov), { good: 90, top: 85, instant: 80 });
+  // 90-Tage-Tief nur ab 20 Tagen Verlauf
+  assert.equal(clampThresholds({ good: 90, top: 88, instant: 80 }, { atAnalysis: 100, median30: 100, low90: 86, days90: 25 }, null, nov).top, 86);
+  assert.equal(clampThresholds({ good: 90, top: 87, instant: 80 }, { atAnalysis: 100, median30: 100, low90: 70, days90: 10 }, null, nov).top, 87);
+  // steigende Tendenz außerhalb November: „gut“ nur ≤ Preis am Analysetag
+  assert.equal(clampThresholds({ good: 105, top: 99, instant: 95 }, { atAnalysis: 100, median30: 98, low90: null, days90: 0 }, 'rising', new Date('2026-09-10T12:00:00Z')).good, 100);
+  // ohne Verlauf → unverändert
+  assert.deepEqual(clampThresholds({ good: 105, top: 99, instant: 95 }, { atAnalysis: null, median30: null, low90: null, days90: 0 }, null, nov), { good: 105, top: 99, instant: 95 });
+});

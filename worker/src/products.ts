@@ -26,6 +26,7 @@ export interface ProductRow {
   quantity: number;
   threshold_source?: string | null;
   thresholds_manual?: boolean;
+  price_trend?: string | null;
   name_auto?: boolean;
   name_confirmed?: boolean;
   name_original?: string | null;

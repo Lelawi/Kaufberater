@@ -6,6 +6,7 @@ import { sameShop, normShop, exactShop } from '../util/shop.ts';
 import { isGeneralPromo, namesOtherCategory, promoValue } from './vouchers.ts';
 import { hotWindow, offerMaxAge } from '../util/events.ts';
 import { excludeSqlPatterns } from '../util/match.ts';
+import { effectiveThresholds } from './sanity.ts';
 import { cheapestBasket, basketText, type Basket } from '../util/pack.ts';
 import { createAlert, enoughBetter, similarRecentAlert } from './alerts.ts';
 import type { ProductRow } from '../products.ts';
@@ -223,7 +224,9 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     // 4) Schwellen
     const fakeNote = best && !multi ? fakeDiscountNote(best.o, await maxSeen(p.id)) : '';
     // Schwellen gelten bei Mengen-Produkten pro Stück, der Höchstpreis für die ganze Menge
-    const levels: [string, number | null][] = [['instant', p.threshold_instant], ['top', p.threshold_top], ['good', p.threshold_good ?? (p.max_price ? p.max_price / quantity : null)]];
+    // Analyse-Schwellen plausibilisiert („gut“ nie auf/über dem Normalpreis), nur für diese Bewertung – nicht gespeichert
+    const th = await effectiveThresholds(p);
+    const levels: [string, number | null][] = [['instant', th.instant], ['top', th.top], ['good', th.good ?? (p.max_price ? p.max_price / quantity : null)]];
     const where = (c: Cand) => `${c.o.shop}${c.o.country !== 'DE' ? ` (${c.o.country})` : ''}`;
     const perPiece = multi ? '/Stück' : '';
     for (const cand of [bestRaw, bestRRaw].filter(Boolean) as Cand[]) {
