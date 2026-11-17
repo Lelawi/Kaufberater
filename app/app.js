@@ -385,6 +385,9 @@ async function viewProduct(id) {
   ${!isBought ? raw(ladder(p, p.best_price)) : ''}
   ${!isBought && p.price_trend ? html`<p class="hint" style="margin-top:6px;${p.price_trend === 'rising' ? 'color:var(--warn);font-weight:600' : ''}">${trendText(p)}</p>` : ''}
   <p class="hint" style="margin-top:6px">Zuletzt geprüft ${ago(p.last_checked_at)}${p.lowest_seen ? html` · Tiefstpreis seit Beobachtung ${fmtEur(p.lowest_seen)} (${fmtDate(p.lowest_seen_at)})` : ''}</p>
+  ${!isBought && best ? html`<div class="quick"><a class="btn" href="${safeUrl(best.url)}" target="_blank" rel="noopener">Zum Angebot</a><button class="btn ghost" id="boughtTop" type="button">Gekauft</button></div>` : ''}
+  <div class="seg tabs" role="radiogroup" aria-label="Ansicht">${PRODUCT_TABS.map(([k, label]) => html`<label><input type="radio" name="ptab" value="${k}" ${k === productTab() ? 'checked' : ''}><span>${k === 'offers' ? `${label} ${newOffers.length}` : label}</span></label>`)}</div>
+  <div class="tab" data-tab="overview">
 
   ${a ? html`<section class="panel">
       <h2>Einschätzung</h2>
@@ -397,10 +400,10 @@ async function viewProduct(id) {
     </section>` : html`<section class="panel flat"><h2>Einschätzung</h2><p class="muted">${p.analysis_status === 'failed' ? 'Die Analyse ist fehlgeschlagen und wird erneut versucht.' : 'Die Tiefenanalyse (Preisgeschichte, Vorgänger, Aktionstage, Alternativen) läuft jeden Morgen und erscheint dann hier. Bis dahin gelten vorläufige Schwellen aus den gefundenen Preisen.'}</p></section>`}
 
   ${multi && !isBought ? basketSection(p, offers) : ''}
-  ${!isBought ? packOverview(p, offers) : ''}
 
-  <section class="panel">
-    <h2>Kaufschwellen${multi ? html` <span class="muted" style="font-weight:400">pro Stück</span>` : ''}</h2>
+  ${!isBought ? html`<details class="panel more">
+    <summary>Kaufschwellen anpassen</summary>
+    <h2 hidden>Kaufschwellen${multi ? html` <span class="muted" style="font-weight:400">pro Stück</span>` : ''}</h2>
     <form id="thr" class="grid-2" style="grid-template-columns:repeat(3,1fr)">
       <div class="field"><label for="tg">Guter Preis</label><input id="tg" type="number" step="1" inputmode="decimal" value="${p.threshold_good ?? ''}"></div>
       <div class="field"><label for="tt">Top-Preis</label><input id="tt" type="number" step="1" inputmode="decimal" value="${p.threshold_top ?? ''}"></div>
@@ -412,24 +415,28 @@ async function viewProduct(id) {
       : 'Werden nach der ersten Preissuche automatisch gesetzt.'}</p>
     ${p.max_price ? html`<p class="hint">Dein Höchstpreis: <strong>${fmtEur(p.max_price)}</strong>${multi ? ` für ${p.quantity} Stück` : ''} – sobald ein Angebot darunter liegt, kommt sofort eine Meldung.</p>` : ''}
     <div class="btn-row"><button class="btn small" id="saveThr">Schwellen speichern</button>${p.thresholds_manual ? html`<button class="btn small ghost" id="autoThr">Wieder der Analyse überlassen</button>` : ''}</div>
-  </section>
+  </details>` : ''}
 
   <section class="panel"><div class="chart-head"><h2>Preisverlauf${multi ? html` <span class="muted" style="font-weight:400">pro Stück</span>` : ''}</h2>
     <div class="seg small" role="radiogroup" aria-label="Zeitraum">${RANGES.map(([k, label]) => html`<label><input type="radio" name="range" value="${k}" ${k === chartRange() ? 'checked' : ''}><span>${label}</span></label>`)}</div></div>
     <div id="chartBox">${raw(chartFor(seriesR.data ?? [], p, a?.price_history))}</div></section>
 
+  </div>
+  <div class="tab" data-tab="offers">
   <section class="panel"><h2>Angebote Neuware <span class="muted" style="font-weight:400">${newOffers.length}</span></h2>
     ${newOffers.length ? offerTable(newOffers, false, multi) : html`<p class="muted">Noch keine.</p>`}
     ${disputed.length ? html`<p class="hint">${disputed.length} Angebot${disputed.length === 1 ? '' : 'e'} als falsch gemeldet (${disputed.map((o) => `${o.shop} ${fmtEur(o.total)}`).join(', ')}) – ${disputed.length === 1 ? 'zählt' : 'zählen'} vorerst nicht.<button class="linklike" id="undispute">Rückgängig</button></p>` : ''}</section>
   ${p.include_refurb ? html`<section class="panel"><h2>Refurbished, B-Ware, gebraucht <span class="muted" style="font-weight:400">${refurb.length}</span></h2>
     ${refurb.length ? offerTable(refurb, true, multi) : html`<p class="muted">Noch keine gefunden.</p>`}</section>` : ''}
 
+  ${!isBought ? packOverview(p, offers) : ''}
   <section class="panel"><h2>Deals aus der Community</h2>${dealList(dealsR.data ?? [], multi)}</section>
 
   ${voucherSection(p, newOffers, vouchersR.data ?? [], ratesR.data ?? [], myVouchersR.data ?? [])}
 
-  ${a ? analysisDetails(a) : ''}
-
+  </div>
+  <div class="tab" data-tab="analysis">${a ? analysisDetails(a) : html`<section class="panel flat"><p class="muted">Die Tiefenanalyse läuft jeden Morgen und erscheint dann hier.</p></section>`}</div>
+  <div class="tab" data-tab="sources">
   <section class="panel flat"><h2>Überwachte Quellen</h2>
     <ul class="list-plain">${(listingsR.data ?? []).map((l) => html`<li>
       <div><a href="${safeUrl(l.url)}" target="_blank" rel="noopener">${sourceLabel(l)}</a>
@@ -438,8 +445,10 @@ async function viewProduct(id) {
     </li>`)}</ul>
     <form id="addL" style="display:flex;gap:8px;margin-top:12px"><input id="lurl" type="url" placeholder="Weiteren Link überwachen (Shop, idealo, Amazon …)" required><button class="btn small" type="submit">Hinzufügen</button></form>
   </section>
+  </div>
 
-  <section class="panel flat">
+  <details class="panel flat more" id="moreActions">
+    <summary>Weitere Aktionen (Bearbeiten, Prüfen, Pausieren …)</summary>
     <div class="btn-row">
       ${isBought ? '' : html`<button class="btn" id="boughtBtn">Gekauft</button>`}
       <a class="btn ghost" href="#/edit/${p.id}">Bearbeiten</a>
@@ -461,7 +470,19 @@ async function viewProduct(id) {
       <p class="hint">Bis zu diesem Datum beobachtet die App weiter und meldet sich, falls es deutlich günstiger wird.</p>
       <button class="btn" type="submit">Als gekauft speichern</button>
     </form>
-  </section>`);
+  </details>`);
+  // Reiter (17.11.: weniger Scrollen) – gemerkt pro Gerät
+  const showTab = (k) => view.querySelectorAll('.tab').forEach((t) => { t.hidden = t.dataset.tab !== k; });
+  showTab(productTab());
+  view.querySelectorAll('input[name=ptab]').forEach((r) => r.addEventListener('change', () => {
+    try { localStorage.setItem('kb-ptab', r.value); } catch { /* */ }
+    showTab(r.value);
+  }));
+  document.getElementById('boughtTop')?.addEventListener('click', () => {
+    document.getElementById('moreActions').open = true;
+    document.getElementById('boughtForm').hidden = false;
+    document.getElementById('bp').focus();
+  });
 
   // Aktionen
   view.querySelectorAll('input[name=range]').forEach((r) => r.addEventListener('change', () => {
@@ -498,7 +519,8 @@ async function viewProduct(id) {
   });
   document.getElementById('whichAll')?.addEventListener('click', () => answerWhich(p, (p.name_suggestions ?? []).map((_, i) => i)));
   const num = (x) => (document.getElementById(x).value ? Number(document.getElementById(x).value) : null);
-  document.getElementById('saveThr').onclick = async () => {
+  const saveThr = document.getElementById('saveThr');
+  if (saveThr) saveThr.onclick = async () => {
     const { error } = await sb.from('kb_products').update({ threshold_good: num('tg'), threshold_top: num('tt'), threshold_instant: num('ti'), thresholds_manual: true, threshold_source: 'manual' }).eq('id', id);
     toast(error ? error.message : 'Schwellen gespeichert'); if (!error) route();
   };
@@ -1086,6 +1108,8 @@ function b64ToBytes(s) {
 }
 
 /** Zeitraum des Preisverlaufs (wird gemerkt) */
+const PRODUCT_TABS = [['overview', 'Überblick'], ['offers', 'Angebote'], ['analysis', 'Analyse'], ['sources', 'Quellen']];
+function productTab() { try { const t = localStorage.getItem('kb-ptab'); return PRODUCT_TABS.some(([k]) => k === t) ? t : 'overview'; } catch { return 'overview'; } }
 const RANGES = [['3m', '3 M', 92], ['6m', '6 M', 183], ['12m', '12 M', 366], ['3j', '3 J', 1096], ['all', 'Alles', null]];
 function chartRange() {
   try { const v = localStorage.getItem('kb-range'); if (RANGES.some(([k]) => k === v)) return v; } catch { /* */ }
