@@ -29,7 +29,11 @@ export function computeThresholds(best: number, historyMin: number | null, dealP
   // Schon jetzt ein guter Preis (17.11.: 34,95 € bei üblich ~46 € und bestem Deal 33,69 € – trotzdem nur Schwellen darunter):
   // deutlich unter dem Marktschnitt der Händler oder fast so günstig wie der beste frühere Deal → „gut“ = aktueller Preis
   const lowDeal = deals.length ? Math.min(...deals) : null;
-  const belowMarket = market != null && best <= market * 0.87;
+  // Unter dem Marktschnitt allein reicht nicht (Review 17.11.: Median 118 bei Bestpreis 100, obwohl es mehrfach 90 gab) –
+  // zusätzlich muss der Preis nahe am bisherigen Tief oder höchstens beim üblichen Deal-Preis liegen
+  const dealMedian = deals.length ? quantile(deals, 0.5) : null;
+  const belowMarket = market != null && best <= market * 0.87 &&
+    ((historyMin != null && best <= historyMin * 1.03) || (dealMedian != null && best <= dealMedian));
   const nearDealLow = lowDeal != null && best <= lowDeal * 1.05;
   if (belowMarket || nearDealLow) {
     const g = Math.ceil(best);
@@ -95,7 +99,10 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
                            from kb_offers o where o.product_id = ${p.id} and not o.gone and o.condition = 'new' and coalesce(o.in_stock, true)
                              and o.last_seen_at > now() - ${offerMaxAge()}::interval and (${multi} or o.pack_size = 1)
                              and o.listing_id not in (select id from kb_listings where product_id = ${p.id} and (rejected or not active))
-                             and o.disputed_total is null`;
+                             and o.disputed_total is null
+                             -- nur seriöse Händler (wie trusted in evaluate.ts) – Marktplatz-Händler ziehen den Median nach oben
+                             and not (o.shop_reviews is not null and o.shop_reviews < 20)
+                             and not (o.shop_rating is not null and o.shop_rating < 3.5 and coalesce(o.shop_reviews, 0) < 500)`;
     const market = mk?.n >= 5 && mk.med ? Number(mk.med) : null;
     const t = computeThresholds(Number(p.best_price), seen.length ? Math.min(...seen) : null, deals.map((d) => Number(d.price)), p.price_trend, market);
     const upd = await sql`update kb_products set threshold_good = ${t.good}, threshold_top = ${t.top}, threshold_instant = ${t.instant}, threshold_source = 'auto'
@@ -104,7 +111,8 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
               returning id`;
     if (!upd.length) continue;
     await createAlert({
-      userId: p.user_id, productId: p.id, kind: 'analysis', level: t.already ? 'good' : 'info',
+      // immer nur Info: ist der Preis wirklich gut, meldet die anschließende Bewertung („Guter Preis“) – sonst zwei Pushes
+      userId: p.user_id, productId: p.id, kind: 'analysis', level: 'info',
       title: t.already ? `${p.name}: schon jetzt ein guter Preis` : `${p.name}: Preisüberwachung läuft`,
       body: `Günstigster Preis gerade ${fmtEur(Number(p.best_price))}${multi ? ' pro Stück' : ''}. Vorläufige Schwellen${multi ? ' (pro Stück)' : ''} aus ${t.basis}: gut ${fmtEur(t.good)}, top ${fmtEur(t.top)}, sofort ${fmtEur(t.instant)}. Die Tiefenanalyse verfeinert sie morgen früh.`,
       dedupKey: `auto:${p.id}`,

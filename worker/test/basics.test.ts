@@ -70,9 +70,12 @@ test('Vorläufige Schwellen', () => {
   // Schon guter Preis: deutlich unter dem Händler-Median bzw. fast so günstig wie der beste Deal → „gut“ = aktueller Preis
   const g = computeThresholds(34.95, 34.95, [33.69], null, 46);
   assert.ok(g.already && g.good >= 34.95 && g.top < g.good && g.instant < g.top, JSON.stringify(g));
-  const m = computeThresholds(80, null, [], null, 100);
+  const m = computeThresholds(80, 79, [], null, 100);
   assert.ok(m.already && m.good >= 80, JSON.stringify(m));
   assert.ok(!computeThresholds(95, null, [], null, 100).already);
+  // 17.11.: unter Median, aber deutlich über früheren Deals und Verlaufstief → nicht „schon gut“
+  assert.ok(!computeThresholds(100, 95, [90, 92, 99], null, 118).already);
+  assert.ok(!computeThresholds(80, null, [], null, 100).already);   // ohne Tief/Deals kein „schon gut“
   console.log(t, n);
 });
 
