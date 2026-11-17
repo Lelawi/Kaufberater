@@ -71,8 +71,10 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
           const [{ n }] = await sql`select count(*)::int as n from kb_offers where listing_id = ${l.id} and not gone`;
           if (n >= 4) {
             stats.errors++;
-            await sql`update kb_listings set last_checked_at = now(), last_error = ${'Seite ohne Angebotsliste – wird wiederholt'},
-                       next_check_at = now() + interval '20 minutes' where id = ${l.id}`;
+            const [{ streak }] = await sql`update kb_listings set last_checked_at = now(), last_error = ${'Seite ohne Angebotsliste – wird wiederholt'},
+                       error_count = error_count + 1, next_check_at = now() + interval '20 minutes' where id = ${l.id} returning error_count as streak`;
+            // zweimal in Folge ohne Preise → Angebote gelten nicht mehr (sonst bleibt ein ausverkaufter Deal Bestpreis)
+            if (streak >= 2) await sql`update kb_offers set gone = true where listing_id = ${l.id} and not gone`;
             continue;
           }
         }
@@ -114,6 +116,11 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
         // Deaktiviert (404 oder 20 Fehler) → seine Angebote gelten nicht mehr (sonst blieben sie „lieferbar“)
         await sql`update kb_offers set gone = true where listing_id = ${l.id} and not gone
                   and exists (select 1 from kb_listings where id = ${l.id} and not active)`;
+        // „kein Preis“ (oft: ausverkauft) zweimal in Folge → Angebote der Quelle sofort als verschwunden markieren
+        if (!isBlock && (/kein preis|nicht verfügbar|ausverkauft/i.test(msg) || (e as any).status === 404 || (e as any).status === 410)) {
+          await sql`update kb_offers set gone = true where listing_id = ${l.id} and not gone
+                    and exists (select 1 from kb_listings where id = ${l.id} and error_count >= 2)`;
+        }
         await recordSourceResult(sourceKey, false, msg, { block: sourceBlocked });
         if ((e as any).body !== undefined && (isBlock || !debugged.has(sourceKey))) {
           const be = e as any;

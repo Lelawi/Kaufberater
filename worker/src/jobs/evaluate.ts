@@ -94,7 +94,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       from kb_offers where product_id = ${p.id} and not gone and coalesce(in_stock, true)
         -- nur kürzlich bestätigte Preise (Review 11.11.): Quelle gesperrt/Listing deaktiviert → Angebot blieb sonst
         -- wochenlang „lieferbar“ und konnte Bestpreis bleiben oder Alarme auslösen
-        and last_seen_at > now() - interval '24 hours'
+        -- in der heißen Phase nur 2 Std. (Deals sind oft nach Stunden ausverkauft, die Shopseite liefert dann „kein Preis“)
+        and last_seen_at > now() - ${offerMaxAge()}::interval
         -- Quelle abgeschaltet (404 „Produkt nicht verfügbar“, 20 Fehler in Folge) → Angebot zählt nicht mehr, auch wenn es
         -- erst vor Kurzem gesehen wurde (11.11.: LG G6 bei Berlet 404, stand trotzdem als Bestpreis da)
         and listing_id not in (select id from kb_listings where product_id = ${p.id} and not active)
@@ -323,6 +324,11 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     });
   }
   return stats;
+}
+
+/** Wie lange ein zuletzt gesehenes Angebot für Bestpreis und Meldungen zählt */
+export function offerMaxAge(now = new Date()): string {
+  return hotWindow(now) ? '2 hours' : '24 hours';
 }
 
 type Cand = { o: Offer; eff: number; sum: number; notes: string; basket?: Basket };

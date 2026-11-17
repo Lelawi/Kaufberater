@@ -6,6 +6,7 @@ import { createAlert } from './alerts.ts';
 import { fmtEur } from '../util/money.ts';
 import { PRICE_ERROR } from '../util/plausible.ts';
 import { conditionFromTitle } from '../adapters/common.ts';
+import { offerMaxAge } from './evaluate.ts';
 
 function roundNice(v: number): number {
   if (v >= 1000) return Math.round(v / 10) * 10 - 1;     // 2.499 statt 2.503
@@ -92,7 +93,7 @@ export async function runAutoThresholds(opts: { productId?: string } = {}) {
     // Üblicher Händlerpreis: Median der aktuellen Neuware-Angebote (pro Stück), erst ab 5 Angeboten aussagekräftig
     const [mk] = await sql`select percentile_cont(0.5) within group (order by o.total / case when ${multi} then o.pack_size else 1 end) as med, count(*)::int as n
                            from kb_offers o where o.product_id = ${p.id} and not o.gone and o.condition = 'new' and coalesce(o.in_stock, true)
-                             and o.last_seen_at > now() - interval '24 hours' and (${multi} or o.pack_size = 1)
+                             and o.last_seen_at > now() - ${offerMaxAge()}::interval and (${multi} or o.pack_size = 1)
                              and o.listing_id not in (select id from kb_listings where product_id = ${p.id} and (rejected or not active))
                              and o.disputed_total is null`;
     const market = mk?.n >= 5 && mk.med ? Number(mk.med) : null;
