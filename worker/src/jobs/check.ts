@@ -13,7 +13,7 @@ import { norm } from '../util/match.ts';
 
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
-  condition: 'new' | 'refurbished' | 'used' | 'bware'; title: string | null; check_interval_minutes: number; error_count: number;
+  condition: 'new' | 'refurbished' | 'used' | 'bware'; title: string | null; check_interval_minutes: number; error_count: number; last_error: string | null;
   p_name: string; p_name_auto: boolean; p_brand: string | null; p_model: string | null; p_ean: string | null; p_terms: string[]; p_exclude: string[];
 }
 
@@ -22,7 +22,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
   const blocked = await blockedSources();
   const due = await sql<DueListing[]>`
     select l.id, l.product_id, l.user_id, l.source, l.country, l.external_id, l.url, l.condition, l.title,
-           l.check_interval_minutes, l.error_count,
+           l.check_interval_minutes, l.error_count, l.last_error,
            p.name as p_name, p.name_auto as p_name_auto, p.brand as p_brand, p.model as p_model, p.ean as p_ean,
            p.search_terms as p_terms, p.exclude_terms as p_exclude
     from kb_listings l join kb_products p on p.id = l.product_id
@@ -102,17 +102,24 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
         blockedStreak = 0;
       } catch (e) {
         stats.errors++;
-        const msg = (e as Error).message.slice(0, 500);
-        const isBlock = /blockiert/.test(msg);
+        const isBlock = /blockiert/.test((e as Error).message);
+        // 404 erst nach 3 Treffern in Folge abschalten (Shops bauen zu Black Friday Seiten um) – Zähler steht im Fehlertext
+        const is404 = (e as any).status === 404;
+        const prev404 = Number(l.last_error?.match(/^\[404×(\d+)\]/)?.[1] ?? 0);
+        const n404 = is404 ? prev404 + 1 : 0;
+        const msg = ((n404 ? `[404×${n404}] ` : '') + (e as Error).message).slice(0, 500);
         if (isBlock) blockedStreak++;
         const sourceBlocked = isBlock && blockedStreak >= 2;
         // Bei Fehlern seltener versuchen (max. 1x pro Tag), nach 20 Fehlern in Folge deaktivieren.
         // Sperren der ganzen Quelle sind kein Fehler der Seite: höchstens 6 Std. warten und nie deswegen deaktivieren.
+        // In der heißen Phase höchstens 60 Min. Rückstau (sonst bis zu 24 Std. – ein Aussetzer kostete den ganzen Tag).
+        // Sperren nie öfter als bisher anfragen (6 Std.) – häufigere Abrufe verlängern Sperren eher
+        const maxWait = isBlock ? 360 : hotWindow() ? 60 : 1440;
         await sql`update kb_listings set last_checked_at = now(), last_error = ${msg}, error_count = error_count + 1,
-                   next_check_at = now() + make_interval(mins => least(${isBlock ? 360 : 1440}, check_interval_minutes * power(2, least(error_count + 1, 7))::int)),
+                   next_check_at = now() + make_interval(mins => least(${maxWait}, check_interval_minutes * power(2, least(error_count + 1, 7))::int)),
                    active = ${isBlock} or error_count + 1 < 20
                  where id = ${l.id}`;
-        if ((e as any).status === 404) await sql`update kb_listings set active = false where id = ${l.id}`;
+        if (n404 >= 3) await sql`update kb_listings set active = false where id = ${l.id}`;
         // Deaktiviert (404 oder 20 Fehler) → seine Angebote gelten nicht mehr (sonst blieben sie „lieferbar“)
         await sql`update kb_offers set gone = true where listing_id = ${l.id} and not gone
                   and exists (select 1 from kb_listings where id = ${l.id} and not active)`;
