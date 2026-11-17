@@ -223,3 +223,11 @@ test('Allgemeine Shop-Aktionen', () => {
     'Kaufe cyberport Geschenkgutscheine ab 25€', '[Amazon Haul] 11€ Rabatt bei 25€ MBW am 11.11.',
     'Digitaler Gutschein von GALAXUS schon ab 10€', 'Verkaufe einen Artikel & hol dir 10 €']) assert.ok(!isGeneralPromo(t), t);
 });
+
+test('Heiße Phase: Tagesgrenze in MEZ (+1 Std., nicht +2)', () => {
+  // 22.11. 23:30 MEZ = 22:30 UTC → noch nicht Black Week; 23.11. 00:30 MEZ = 22.11. 23:30 UTC → Black Week
+  assert.equal(hotWindow(new Date('2026-11-22T22:30:00Z')), null);
+  assert.equal(hotWindow(new Date('2026-11-22T23:30:00Z')), 'Black Week');
+  assert.equal(hotWindow(new Date('2026-12-01T22:59:00Z')), 'Black Week');
+  assert.equal(hotWindow(new Date('2026-12-01T23:00:00Z')), null);
+});

@@ -31,14 +31,26 @@ export function nextShoppingEvent(now = new Date()): ShoppingEvent | null {
  * In dieser Zeit wird öfter geprüft, weil gute Deals oft nach wenigen Stunden ausverkauft sind.
  */
 export function hotWindow(now = new Date()): string | null {
-  const y = now.getUTCFullYear();
+  // Kalendertag in deutscher Zeit (MEZ/MESZ automatisch) – wie die DB-Funktion kb_hot_window()
+  const [y, m, d] = berlinDate(now);
+  const t = Date.UTC(y, m - 1, d);
   const bf = shoppingEvents(y).find((e) => e.name === 'Black Friday')!.date;
-  const day = (d: Date, plus: number) => +d + plus * 864e5;
-  const t = +now + 2 * 3600_000;   // grob deutsche Zeit (Tagesgrenzen)
-  const singles = Date.UTC(y, 10, 11);
-  if (t >= singles && t < day(new Date(singles), 1)) return 'Singles Day';
-  if (t >= day(bf, -4) && t < day(bf, 5)) return 'Black Week';
+  const day = (x: Date, plus: number) => +x + plus * 864e5;
+  if (m === 11 && d === 11) return 'Singles Day';
+  if (t >= day(bf, -4) && t <= day(bf, 4)) return 'Black Week';
   return null;
+}
+
+/** [Jahr, Monat (1–12), Tag] in Europe/Berlin */
+export function berlinDate(now = new Date()): [number, number, number] {
+  const s = now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });
+  const [y, m, d] = s.split('-').map(Number);
+  return [y, m, d];
+}
+
+/** Stunde (0–23) in Europe/Berlin */
+export function berlinHour(now = new Date()): number {
+  return Number(now.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour12: false, hour: '2-digit' }).slice(0, 2)) % 24;
 }
 
 /** Termin für eine frische Tiefenanalyse vor der Black Week (Sonntag davor, früh morgens) – nur in den 3 Wochen davor */

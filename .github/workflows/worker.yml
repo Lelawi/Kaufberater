@@ -1,6 +1,6 @@
 name: worker
 # Preisabfrage + Tiefenanalyse.
-# - Läuft stündlich (private Repos: 2.000 Freiminuten/Monat) und SOFORT, wenn in der App etwas eingetragen wird
+# - Läuft stündlich (öffentliches Repo: Standard-Runner kostenlos; Haupttakt kommt per pg_cron) und SOFORT, wenn in der App etwas eingetragen wird
 #   (die Datenbank stößt diesen Ablauf dann über die GitHub-Schnittstelle an).
 # - Die Tiefenanalyse läuft als geplante Claude-Aufgabe (nicht hier).
 on:
