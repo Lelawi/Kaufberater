@@ -75,3 +75,13 @@ test('Vorläufige Schwellen: Tendenz im November, nur senken', () => {
   assert.deepEqual(lowerOnly({ good: 100, top: 95, instant: 90 }, { good: 110, top: 93, instant: 91 }), { good: 100, top: 93, instant: 90 });
   assert.deepEqual(lowerOnly({ good: null, top: null, instant: null }, { good: 110, top: 100, instant: 90 }), { good: 110, top: 100, instant: 90 });
 });
+
+import { enoughBetter } from '../src/jobs/alerts.ts';
+test('Erneute Meldung nur bei spürbarer Verbesserung', () => {
+  assert.ok(!enoughBetter(2000, 1999));      // 1 € weniger beim teuren Gerät
+  assert.ok(enoughBetter(2000, 1995));       // 5 €
+  assert.ok(!enoughBetter(30, 29.5));        // 0,50 € (< 1 €)
+  assert.ok(enoughBetter(30, 29));
+  assert.ok(enoughBetter(12.5, 12.2, true)); // Stückpreis: 2 % = 0,25 €
+  assert.ok(!enoughBetter(12.5, 12.4, true));
+});

@@ -6,7 +6,7 @@ import { sameShop, normShop, exactShop } from '../util/shop.ts';
 import { isGeneralPromo, namesOtherCategory, promoValue } from './vouchers.ts';
 import { hotWindow } from '../util/events.ts';
 import { cheapestBasket, basketText, type Basket } from '../util/pack.ts';
-import { createAlert } from './alerts.ts';
+import { createAlert, enoughBetter, similarRecentAlert } from './alerts.ts';
 import type { ProductRow } from '../products.ts';
 
 /** Stufen aufsteigend – für „gleich gute oder bessere Meldung schon da?“ */
@@ -219,18 +219,18 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       // Preis nur dank Shop-Aktion erreicht → höchstens „Top-Preis“: Aktionen haben oft Bedingungen, die wir nicht sehen
       const viaPromo = /Aktion „/.test(cand.notes ?? '');
       const level = viaPromo && hit[0] === 'instant' ? 'top' : hit[0];
-      // nicht erneut melden, wenn in den letzten 7 Tagen schon ein gleich guter/besserer Preis gemeldet wurde
-      // (sonst kommt nach einem Tag dieselbe oder sogar eine schlechtere Meldung noch einmal)
-      // Bei Mengen auf Cent genau (16,40 → 16,00 €/Stück macht bei 39 Stück ~16 € aus), sonst auf ganze Euro.
-      // Eine höhere Stufe kommt trotz Sperre durch (Review 11.11.: „gut“ gemeldet, danach „sehr gut“ verschluckt).
-      const priceKey = multi ? cand.eff.toFixed(2) : String(Math.floor(cand.eff));
+      // nicht erneut melden, wenn in den letzten 7 Tagen schon ein gleich guter/besserer Preis gemeldet wurde – und auch
+      // nicht bei jedem Euro weniger: erneut erst ab ≥ 2 % oder ≥ 5 € Verbesserung (Review 17.11.: Meldungsflut bei
+      // schwankenden Preisen). Eine höhere Stufe kommt trotz Sperre durch (Review 11.11.).
+      const priceKey = cand.eff.toFixed(2);
       const sameOrHigher = LEVEL_ORDER.slice(LEVEL_ORDER.indexOf(level));
-      const recent = await sql`select 1 from kb_alerts where product_id = ${p.id} and kind = 'threshold'
+      const [prev] = await sql`select min(split_part(dedup_key, ':', 5)::numeric) as m from kb_alerts where product_id = ${p.id} and kind = 'threshold'
         and created_at > now() - interval '7 days'
         and dedup_key like ${`thr:${p.id}:${isRefurb ? 'r' : 'n'}:%`}
-        and split_part(dedup_key, ':', 4) in ${sql(sameOrHigher)}
-        and split_part(dedup_key, ':', 5)::numeric <= ${Number(priceKey)} limit 1`;
-      if (recent.length) continue;
+        and split_part(dedup_key, ':', 4) in ${sql(sameOrHigher)}`;
+      if (prev?.m != null && !enoughBetter(Number(prev.m), cand.eff, multi)) continue;
+      // Deal-Meldung zum selben Shop/Preis in den letzten 6 Std. → keine zweite Meldung
+      if (await similarRecentAlert(p.id, cand.eff, cand.o.shop, level)) continue;
       stats.alerts += await createAlert({
         userId: p.user_id, productId: p.id, kind: 'threshold', level: level as any,
         title: `${LEVEL_LABEL[level]} ${isRefurb ? '(Refurbished) ' : ''}${p.name}: ${fmtEur(cand.eff)}${perPiece}`,
@@ -243,6 +243,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
           (fakeNote && !isRefurb ? ` ${fakeNote}` : ''),
         // Monat im Schlüssel: derselbe Preis später wieder (Black Week → Weihnachten) wird erneut gemeldet
         url: cand.o.url, dedupKey: `thr:${p.id}:${isRefurb ? 'r' : 'n'}:${level}:${priceKey}:${monthKey()}`,
+        data: { price: cand.eff, shop: cand.o.shop },
       });
     }
 

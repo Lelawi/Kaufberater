@@ -3,6 +3,7 @@ import webpush from 'web-push';
 import { db, workerConfig } from '../db.ts';
 import { apnsReady, sendApns, closeApns } from '../util/apns.ts';
 import { shouldNotify, prefsFromSettings } from '../util/notify.ts';
+import { exactShop } from '../util/shop.ts';
 
 export interface NewAlert {
   userId: string;
@@ -26,6 +27,29 @@ export async function createAlert(a: NewAlert): Promise<number> {
     on conflict (user_id, dedup_key) do nothing
     returning id`;
   return r.length;
+}
+
+const RANK: Record<string, number> = { info: 0, good: 1, top: 2, instant: 3 };
+
+/** Erneut melden nur bei spürbarer Verbesserung: ≥ 2 % oder ≥ 5 € (mindestens 1 €, bei Stückpreisen 10 Cent) */
+export function enoughBetter(prev: number, now: number, perPiece = false): boolean {
+  const need = Math.min(5, Math.max(prev * 0.02, perPiece ? 0.1 : 1));
+  return prev - now >= need - 1e-9;
+}
+
+/**
+ * Gibt es in den letzten 6 Std. schon eine Meldung (Deal oder Schwelle) zum selben Shop und Preis (±1 %) mit
+ * gleicher oder höherer Stufe? Dann keine zweite (Review 17.11.: Deal und Schwelle meldeten denselben Preis doppelt).
+ */
+export async function similarRecentAlert(productId: string, price: number, shop: string | null | undefined, level: string): Promise<boolean> {
+  if (!shop || !(price > 0)) return false;
+  const sql = await db();
+  const rows = await sql`select level, data from kb_alerts where product_id = ${productId} and kind in ('deal', 'threshold')
+                         and created_at > now() - interval '6 hours' and data ? 'price'`;
+  return rows.some((r) => {
+    const d = r.data as { price?: number; shop?: string };
+    return d.price != null && Math.abs(Number(d.price) - price) <= price * 0.01 && exactShop(d.shop, shop) && (RANK[r.level] ?? 0) >= (RANK[level] ?? 0);
+  });
 }
 
 let vapidReady = false;

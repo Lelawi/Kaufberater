@@ -3,7 +3,7 @@ import { db } from '../db.ts';
 import { DEAL_SOURCES } from '../adapters/registry.ts';
 import { toQuery, type ProductRow } from '../products.ts';
 import { recordSourceResult } from './health.ts';
-import { createAlert } from './alerts.ts';
+import { createAlert, similarRecentAlert } from './alerts.ts';
 import { fmtEur } from '../util/money.ts';
 import { IMPORT_MARKET, PRICE_ERROR } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
@@ -93,6 +93,8 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
               // „gut“ nur, wenn die Schwelle wirklich erreicht ist – sonst nur Info (keine Push-Nachricht)
               : cmp && tGood && cmp <= tGood ? 'good' : 'info';
             const finalLevel = level;
+            // Schwellen-Meldung zum selben Shop/Preis (±1 %) in den letzten 6 Std. → keine zweite Meldung
+            if (cmp && await similarRecentAlert(p.id, cmp, d.merchant, finalLevel)) continue;
             stats.alerts += await createAlert({
               userId: p.user_id, productId: p.id, kind: 'deal', level: finalLevel,
               title: multi && totalForNeed !== null && cmp
@@ -104,6 +106,7 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
                 (importWare ? ' Versand evtl. aus dem Ausland – Lieferzeit prüfen.' : '') +
                 (p.best_price && d.price ? `. Zum Vergleich: bester beobachteter Preis aktuell ${fmtEur(p.best_price)}${multi ? ' pro Stück' : ''}.` : ''),
               url: d.url, dedupKey: `deal:${d.portal}:${d.externalId}`,
+              data: cmp ? { price: cmp, shop: d.merchant ?? null } : null,
             });
           }
         }
