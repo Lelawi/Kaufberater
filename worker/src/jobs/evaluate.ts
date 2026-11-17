@@ -156,7 +156,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     const pickBest = (list: typeof enriched, by: 'eff' | 'raw' = 'eff'): Cand | undefined => {
       const ok = list.filter(trusted);
       if (!multi) {
-        const e = by === 'raw' ? [...ok].sort((a, b) => Number(a.o.total) - Number(b.o.total) || a.eff - b.eff)[0] : ok[0];
+        const key = (e: (typeof enriched)[number]) => (by === 'raw' ? Number(e.o.total) : e.eff) + shipPenalty(e.o);
+        const e = [...ok].sort((a, b) => key(a) - key(b) || a.eff - b.eff)[0];
         return e ? { ...e, sum: e.eff, raw: Number(e.o.total), rawSum: Number(e.o.total) } : undefined;
       }
       // Gruppe = eine Bestellung: Händler + Land. Marktplätze (eBay …) haben je Angebot einen anderen Verkäufer →
@@ -177,7 +178,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
         // Gutscheine/Cashback auf die ganze Bestellung (nicht je Packung)
         const ef = effective({ ...main.o, price: b.goods, shipping: b.shipping, total: b.total }, vouchers, rates, p.name);
         const c: Cand = { o: main.o, eff: round2(ef.eff / quantity), sum: ef.eff, notes: ef.notes, basket: b, raw: round2(b.total / quantity), rawSum: b.total };
-        if (!bestC || (by === 'raw' ? c.rawSum < bestC.rawSum : c.sum < bestC.sum)) bestC = c;
+        const k = (x: Cand) => (by === 'raw' ? x.rawSum : x.sum) + (market ? 0 : shipPenalty(x.o));
+        if (!bestC || k(c) < k(bestC)) bestC = c;
       }
       return bestC;
     };
@@ -251,7 +253,8 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
           ? `${quantity} Stück bei ${where(cand)}: ${basketText(cand.basket)} = ${fmtEur(cand.basket.total)}` +
             (cand.notes ? `, nach ${cand.notes} effektiv ${fmtEur(cand.sum)}` : '') +
             (cand.basket.pieces > quantity ? ` (du bekommst ${cand.basket.pieces} Stück)` : '')
-          : `Bei ${where(cand)}: ${fmtEur(cand.o.total)}` + (cand.notes ? `, nach ${cand.notes} effektiv ${fmtEur(cand.eff)}` : '')) +
+          : `Bei ${where(cand)}: ${fmtEur(cand.o.total)}` + (cand.o.shipping == null ? ' (Versandkosten unbekannt)' : '') +
+            (cand.notes ? `, nach ${cand.notes} effektiv ${fmtEur(cand.eff)}` : '')) +
           (p.lowest_seen ? `. Bisher günstigster beobachteter Preis: ${fmtEur(p.lowest_seen)}${perPiece}.` : '.') +
           context + (fakeNote && !isRefurb ? ` ${fakeNote}` : ''),
         // Monat im Schlüssel: derselbe Preis später wieder (Black Week → Weihnachten) wird erneut gemeldet
@@ -338,6 +341,13 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     });
   }
   return stats;
+}
+
+/** Versand unbekannt (Shop nennt keinen): typische Pauschale nur für den Vergleich ansetzen – so schlägt ein Angebot
+ *  ohne Versandangabe eines mit bekanntem Versand nur, wenn es um mehr als die übliche Pauschale günstiger ist */
+export const TYPICAL_SHIPPING = 5.95;
+export function shipPenalty(o: Pick<Offer, 'shipping'>): number {
+  return o.shipping == null ? TYPICAL_SHIPPING : 0;
 }
 
 type Cand = { o: Offer; eff: number; sum: number; notes: string; basket?: Basket; raw: number; rawSum: number };
