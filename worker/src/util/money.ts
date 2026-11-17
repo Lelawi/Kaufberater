@@ -17,6 +17,9 @@ export function parsePrice(input: unknown): number | null {
   let normalized: string;
   if (lastComma === -1 && lastDot === -1) {
     normalized = s;
+  } else if (lastComma === -1 && s.indexOf('.') === lastDot && s.length - lastDot - 1 > 3) {
+    // Maschinenformat mit vielen Nachkommastellen („65.2999“ aus JSON-LD) – kein Tausenderpunkt (der hat genau 3 Ziffern)
+    normalized = s;
   } else if (lastComma > lastDot) {
     // Komma ist Dezimaltrenner, wenn danach 1-2 Ziffern stehen
     const decimals = s.length - lastComma - 1;

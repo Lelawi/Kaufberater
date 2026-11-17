@@ -14,6 +14,7 @@ import { hasExcludedWord } from '../util/match.ts';
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
   condition: 'new' | 'refurbished' | 'used' | 'bware'; title: string | null; check_interval_minutes: number; error_count: number; last_error: string | null;
+  p_threshold_good: number | null; p_quantity: number | null;
   p_name: string; p_name_auto: boolean; p_brand: string | null; p_model: string | null; p_ean: string | null; p_terms: string[]; p_exclude: string[];
 }
 
@@ -24,7 +25,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
     select l.id, l.product_id, l.user_id, l.source, l.country, l.external_id, l.url, l.condition, l.title,
            l.check_interval_minutes, l.error_count, l.last_error,
            p.name as p_name, p.name_auto as p_name_auto, p.brand as p_brand, p.model as p_model, p.ean as p_ean,
-           p.search_terms as p_terms, p.exclude_terms as p_exclude
+           p.search_terms as p_terms, p.exclude_terms as p_exclude, p.threshold_good as p_threshold_good, p.quantity as p_quantity
     from kb_listings l join kb_products p on p.id = l.product_id
     where l.active and not l.rejected
       and (l.next_check_at <= now() or ${opts.productId ?? null}::uuid is not null)
@@ -80,7 +81,7 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
             continue;
           }
         }
-        const r = await saveOffers(l, usable);
+        const r = await saveOffers(l, await withoutAbsurd(l, usable));
         // Vorschaubild für die Liste: das erste gefundene Produktbild (Preisvergleiche zuerst – dort sind es saubere Produktfotos)
         if (pageImage.has(l.url)) {
           const img = pageImage.get(l.url)!; pageImage.delete(l.url);
@@ -153,6 +154,23 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
     }
   }));
   return stats;
+}
+
+/**
+ * Absurde Preise verwerfen (17.11.: Parser lieferte Millionenbeträge): mehr als 3× der Median der übrigen aktuellen
+ * Angebote des Produkts oder mehr als 20× die Schwelle „gut“ (jeweils pro Stück).
+ */
+async function withoutAbsurd(l: DueListing, offers: OfferData[]): Promise<OfferData[]> {
+  if (!offers.length) return offers;
+  const sql = await db();
+  const [{ med, n }] = await sql`select percentile_cont(0.5) within group (order by total / greatest(pack_size, 1)) as med, count(*)::int as n
+    from kb_offers where product_id = ${l.product_id} and listing_id <> ${l.id} and not gone and condition = 'new'
+      and last_seen_at > now() - interval '3 days'`;
+  return offers.filter((o) => !absurdPrice((o.price + (o.shipping ?? 0)) / offerPackSize(o.title, l.title), n >= 3 ? Number(med) : null, l.p_threshold_good != null ? Number(l.p_threshold_good) : null));
+}
+
+export function absurdPrice(unit: number, median: number | null, thresholdGood: number | null): boolean {
+  return (median != null && unit > median * 3) || (thresholdGood != null && thresholdGood > 0 && unit > thresholdGood * 20);
 }
 
 async function saveOffers(l: DueListing, offersIn: OfferData[]) {

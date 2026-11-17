@@ -98,3 +98,15 @@ test('Ausschlusswörter nur als ganzes Wort', () => {
   assert.deepEqual(regex, ['\\yPro\\y', '\\yMX-600\\y', '\\ya\\.b\\y']);
   assert.deepEqual(like, ['%MX600%']);
 });
+
+import { parsePrice } from '../src/util/money.ts';
+import { absurdPrice } from '../src/jobs/check.ts';
+test('Preis-Parser: JSON-LD mit vielen Nachkommastellen, Plausibilität', () => {
+  assert.equal(parsePrice('65.2999'), 65.3);
+  assert.equal(parsePrice('1.299'), 1299);
+  assert.equal(parsePrice('1.299,00 €'), 1299);
+  assert.ok(absurdPrice(652999, 30, 28));
+  assert.ok(absurdPrice(700, null, 30));
+  assert.ok(!absurdPrice(32, 30, 28));
+  assert.ok(!absurdPrice(80, null, null));
+});
