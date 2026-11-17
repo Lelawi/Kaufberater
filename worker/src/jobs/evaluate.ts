@@ -236,6 +236,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
       if (prev?.m != null && !enoughBetter(Number(prev.m), cand.raw, multi)) continue;
       // Deal-Meldung zum selben Shop/Preis in den letzten 6 Std. → keine zweite Meldung
       if (await similarRecentAlert(p.id, cand.raw, cand.o.shop, level)) continue;
+      const context = isRefurb ? '' : await priceContext(p.id, multi, cand.raw, (multi ? newOnes : newOnes.filter((e) => Number(e.o.pack_size ?? 1) === 1)).filter(trusted).map((e) => Number(e.o.total) / (multi ? Math.max(1, Number(e.o.pack_size ?? 1)) : 1)));
       stats.alerts += await createAlert({
         userId: p.user_id, productId: p.id, kind: 'threshold', level: level as any,
         title: `${LEVEL_LABEL[level]} ${isRefurb ? '(Refurbished) ' : ''}${p.name}: ${fmtEur(cand.raw)}${perPiece}`,
@@ -245,7 +246,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
             (cand.basket.pieces > quantity ? ` (du bekommst ${cand.basket.pieces} Stück)` : '')
           : `Bei ${where(cand)}: ${fmtEur(cand.o.total)}` + (cand.notes ? `, nach ${cand.notes} effektiv ${fmtEur(cand.eff)}` : '')) +
           (p.lowest_seen ? `. Bisher günstigster beobachteter Preis: ${fmtEur(p.lowest_seen)}${perPiece}.` : '.') +
-          (fakeNote && !isRefurb ? ` ${fakeNote}` : ''),
+          context + (fakeNote && !isRefurb ? ` ${fakeNote}` : ''),
         // Monat im Schlüssel: derselbe Preis später wieder (Black Week → Weihnachten) wird erneut gemeldet
         url: cand.o.url, dedupKey: `thr:${p.id}:${isRefurb ? 'r' : 'n'}:${level}:${priceKey}:${monthKey()}`,
         data: { price: cand.raw, shop: cand.o.shop, offer: cand.o.id, total: Number(cand.o.total) },
@@ -368,6 +369,36 @@ export function effective(o: Pick<Offer, 'source' | 'shop' | 'price' | 'shipping
   }
   if (bestC) { eff -= bestC.amount; notes.push(`Cashback ${bestC.label} (−${fmtEur(bestC.amount)})`); }
   return { eff: round2(Math.max(0, eff)), notes: notes.join(', ') };
+}
+
+/**
+ * Einordnung für die Meldung: 30-/90-Tage-Tief (Neuware, Angebote + Preisvergleich-Verlauf, ohne abgelehnte Quellen)
+ * und „x % unter dem üblichen Preis“ (Median der aktuellen Angebote seriöser Shops, ab 4 Angeboten).
+ */
+async function priceContext(productId: string, multi: boolean, price: number, trustedTotals: number[]): Promise<string> {
+  const sql = await db();
+  const [r] = await sql`
+    select min(u) filter (where observed_at > now() - interval '30 days') as low30, min(u) as low90 from (
+      select h.observed_at, h.total / case when ${multi} then greatest(h.pack_size, 1) else 1 end as u
+      from kb_price_history h
+      where h.product_id = ${productId} and h.condition = 'new' and h.observed_at > now() - interval '90 days'
+        and (h.series = 'offer' or h.series like 'hist:%') and (${multi} or h.pack_size = 1)
+        and not exists (select 1 from kb_offers o join kb_listings l on l.id = o.listing_id where o.id = h.offer_id and l.rejected)
+        and not exists (select 1 from kb_listings l where l.product_id = ${productId} and l.rejected
+                          and h.series = 'hist:' || l.source and h.shop = l.external_id)
+    ) x`;
+  const parts: string[] = [];
+  const pp = multi ? '/Stück' : '';
+  if (r?.low30 != null) parts.push(`30-Tage-Tief ${fmtEur(Number(r.low30))}${pp}`);
+  if (r?.low90 != null && (r.low30 == null || Number(r.low90) < Number(r.low30) - 0.005)) parts.push(`90-Tage-Tief ${fmtEur(Number(r.low90))}${pp}`);
+  let out = parts.length ? ` ${parts.join(', ')}.` : '';
+  if (trustedTotals.length >= 4) {
+    const t = [...trustedTotals].sort((a, b) => a - b);
+    const median = t.length % 2 ? t[(t.length - 1) / 2] : (t[t.length / 2 - 1] + t[t.length / 2]) / 2;
+    const pct = Math.round((1 - price / median) * 100);
+    if (pct >= 3) out += ` ${pct} % unter dem üblichen Preis (Median ${fmtEur(median)}${pp} bei ${t.length} seriösen Shops).`;
+  }
+  return out;
 }
 
 async function maxSeen(productId: string): Promise<number | null> {
