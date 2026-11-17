@@ -8,6 +8,9 @@ import { fmtEur } from '../util/money.ts';
 import { IMPORT_MARKET, PRICE_ERROR } from '../util/plausible.ts';
 import { hotWindow } from '../util/events.ts';
 import { packSize } from '../util/pack.ts';
+import { conditionFromTitle } from '../adapters/common.ts';
+
+const CONDITION_LABEL: Record<string, string> = { refurbished: 'Refurbished', bware: 'B-Ware/Vorführware', used: 'Gebraucht' };
 
 const BUNDLE = /starter[\s-]*(?:set|kit|paket)|\bbridge\b|\+\s*(?:\d+\s*x\s*)?(?:dimmschalter|schalter|sensor|kontaktsensor|bewegungsmelder|fernbedienung|smart button|tap dial)|\bbundle\b/i;
 
@@ -50,7 +53,10 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
         const cmp: number | null = d.price ? (multi ? Math.round((totalForNeed ?? 0) / need * 100) / 100 : d.price) : null;
         // Sets mit Zubehör (Starter-Set mit Bridge, „+ Dimmschalter“ …) sind kein Preis für das Produkt allein
         const bundle = BUNDLE.test(d.title) && !BUNDLE.test(p.name);
-        const notes = d.foreign ? `Händler in ${ad.country} – Lieferung nach DE prüfen` : importWare ? 'Versand aus dem Ausland – Lieferzeit prüfen'
+        // Zustand aus dem Titel: Refurbished/B-Ware/Gebraucht ist kein Neupreis – weder für Stufe, Verlauf noch Schwellen
+        const condition = conditionFromTitle(d.title);
+        const used = condition !== 'new';
+        const notes = used ? `${CONDITION_LABEL[condition]} – kein Neupreis` : d.foreign ? `Händler in ${ad.country} – Lieferung nach DE prüfen` : importWare ? 'Versand aus dem Ausland – Lieferzeit prüfen'
           : bundle ? 'Set mit Zubehör – nicht mit dem Einzelpreis vergleichbar' : null;
         const r = await sql`
           insert into kb_deals (product_id, user_id, portal, external_id, title, url, merchant, price, next_best_price, temperature,
@@ -67,27 +73,32 @@ export async function runDeals(deadline: number, opts: { productId?: string; por
         // Deal als Preisstützpunkt in den Verlauf (auch alte – gibt Preisgeschichte)
         if (isNew && d.price) {
           await sql`insert into kb_price_history (product_id, user_id, series, shop, condition, observed_at, total, pack_size)
-                    values (${p.id}, ${p.user_id}, ${'deal:' + d.portal}, ${d.merchant ?? d.portal}, 'new', ${d.postedAt ?? new Date()}, ${d.price}, ${pack})`;
+                    values (${p.id}, ${p.user_id}, ${'deal:' + d.portal}, ${d.merchant ?? d.portal}, ${condition}, ${d.postedAt ?? new Date()}, ${d.price}, ${pack})`;
         }
         // Melden: neu, aktiv, jünger als 3 Tage, Lieferung nach DE möglich, und Preis interessant
         const fresh = d.postedAt && Date.now() - new Date(d.postedAt).getTime() < 3 * 86400_000;
-        if (isNew && fresh && !d.expired && !d.foreign && !bundle) {
+        // Nicht-Neuware nur melden, wenn das Produkt auch Refurbished/B-Ware zulässt – dann gegen die Refurb-Schwellen (× 0,9)
+        if (isNew && fresh && !d.expired && !d.foreign && !bundle && (!used || p.include_refurb)) {
+          const f = used ? 0.9 : 1;
+          const tGood = p.threshold_good ? p.threshold_good * f : null;
+          const tTop = p.threshold_top ? p.threshold_top * f : null;
+          const tInstant = p.threshold_instant ? p.threshold_instant * f : null;
           // Höchstpreis gilt für die ganze Menge → pro Stück umrechnen
           const maxUnit = p.max_price ? (multi ? p.max_price / p.quantity : p.max_price) : null;
-          const ref = Math.max(p.threshold_good ?? 0, maxUnit ?? 0) || p.best_price;
+          const ref = Math.max(tGood ?? 0, maxUnit ?? 0) || (used ? p.best_refurb_price ?? (p.best_price ? p.best_price * f : null) : p.best_price);
           const interesting = !cmp || !ref || cmp <= ref * 1.02;
           if (interesting) {
-            const level = cmp && ((p.threshold_instant && cmp <= p.threshold_instant) || (maxUnit && cmp <= maxUnit)) ? 'instant'
-              : cmp && p.threshold_top && cmp <= p.threshold_top ? 'top'
+            const level = cmp && ((tInstant && cmp <= tInstant) || (maxUnit && cmp <= maxUnit)) ? 'instant'
+              : cmp && tTop && cmp <= tTop ? 'top'
               // „gut“ nur, wenn die Schwelle wirklich erreicht ist – sonst nur Info (keine Push-Nachricht)
-              : cmp && p.threshold_good && cmp <= p.threshold_good ? 'good' : 'info';
+              : cmp && tGood && cmp <= tGood ? 'good' : 'info';
             const finalLevel = level;
             stats.alerts += await createAlert({
               userId: p.user_id, productId: p.id, kind: 'deal', level: finalLevel,
               title: multi && totalForNeed !== null && cmp
                 ? `${ad.label}-Deal: ${p.name} – ${need} Stück für ${fmtEur(totalForNeed)} (${fmtEur(cmp)}/Stück` +
                   `${pack > 1 ? `, ${packsNeeded > 1 ? `${packsNeeded}× ` : ''}${pack}er-Pack` : ''}${packsNeeded * pack > need ? `, du bekommst ${packsNeeded * pack}` : ''})`
-                : `${ad.label}-Deal: ${p.name}${d.price ? ' für ' + fmtEur(d.price) : ''}`,
+                : `${ad.label}-Deal: ${p.name}${used ? ` (${CONDITION_LABEL[condition]})` : ''}${d.price ? ' für ' + fmtEur(d.price) : ''}`,
               body: `${d.title}${d.merchant ? ' – bei ' + d.merchant : ''}${d.temperature !== null ? ` (${Math.round(d.temperature)}°)` : ''}` +
                 (d.voucherCode ? ` Gutscheincode: ${d.voucherCode}` : '') +
                 (importWare ? ' Versand evtl. aus dem Ausland – Lieferzeit prüfen.' : '') +
