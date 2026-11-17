@@ -41,6 +41,11 @@ export function hotWindow(now = new Date()): string | null {
   return null;
 }
 
+/** Wie lange ein zuletzt gesehenes Angebot für Bestpreis und Meldungen zählt (heiße Phase: Deals sind oft nach Stunden weg) */
+export function offerMaxAge(now = new Date()): string {
+  return hotWindow(now) ? '2 hours' : '24 hours';
+}
+
 /** [Jahr, Monat (1–12), Tag] in Europe/Berlin */
 export function berlinDate(now = new Date()): [number, number, number] {
   const s = now.toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' });

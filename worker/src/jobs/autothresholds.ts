@@ -6,8 +6,7 @@ import { createAlert } from './alerts.ts';
 import { fmtEur } from '../util/money.ts';
 import { PRICE_ERROR } from '../util/plausible.ts';
 import { conditionFromTitle } from '../adapters/common.ts';
-import { offerMaxAge } from './evaluate.ts';
-import { hotWindow, berlinDate } from '../util/events.ts';
+import { hotWindow, berlinDate, offerMaxAge } from '../util/events.ts';
 
 function roundNice(v: number): number {
   if (v >= 1000) return Math.round(v / 10) * 10 - 1;     // 2.499 statt 2.503

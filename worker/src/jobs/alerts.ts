@@ -4,6 +4,7 @@ import { db, workerConfig } from '../db.ts';
 import { apnsReady, sendApns, closeApns } from '../util/apns.ts';
 import { shouldNotify, prefsFromSettings } from '../util/notify.ts';
 import { exactShop } from '../util/shop.ts';
+import { hotWindow, offerMaxAge } from '../util/events.ts';
 
 export interface NewAlert {
   userId: string;
@@ -95,8 +96,15 @@ export async function deliverAlerts() {
       await sql`update kb_alerts set push_sent_at = now() where id = ${a.id}`;
       stats2.skipped++; continue;
     }
-    const quiet = a.level !== 'instant' && inQuietHours(a.quiet_from, a.quiet_to);
+    // In der Black Week starten viele Aktionen um 0 Uhr → dann auch „Top-Preis“ nachts, sonst nur „Sofort zuschlagen“
+    const nightOk = a.level === 'instant' || (a.level === 'top' && hotWindow() !== null);
+    const quiet = !nightOk && inQuietHours(a.quiet_from, a.quiet_to);
     if (quiet) continue;
+    // Aufgeschoben (Ruhezeit) oder älter: vor dem Senden prüfen, ob das Angebot noch da und nicht teurer ist
+    if (Date.now() - new Date(a.created_at).getTime() > 20 * 60_000 && await isOutdated(a)) {
+      await sql`update kb_alerts set push_sent_at = now(), level = 'info', title = left(title || ' (überholt)', 300) where id = ${a.id}`;
+      stats2.skipped++; continue;
+    }
     let sent = false;
     if (a.push_alerts !== false && apnsOk) {
       // iPhone-App (Apple Push)
@@ -157,6 +165,23 @@ export async function deliverAlerts() {
     }
   }
   return stats;
+}
+
+/** Kaufsignal überholt? Schwelle: Angebot weg, nicht mehr bestätigt oder teurer; Deal: abgelaufen. */
+async function isOutdated(a: Record<string, any>): Promise<boolean> {
+  const sql = await db();
+  const d = (a.data ?? {}) as { offer?: string; total?: number };
+  if (a.kind === 'threshold' && d.offer) {
+    const [o] = await sql`select gone, total, last_seen_at > now() - ${offerMaxAge()}::interval as fresh from kb_offers where id = ${d.offer}`;
+    if (!o) return true;
+    return o.gone || !o.fresh || (d.total != null && Number(o.total) > Number(d.total) + 0.01);
+  }
+  if (a.kind === 'deal' && typeof a.dedup_key === 'string' && a.dedup_key.startsWith('deal:')) {
+    const [, portal, ext] = a.dedup_key.split(':');
+    const [x] = await sql`select expired from kb_deals where product_id = ${a.product_id} and portal = ${portal} and external_id = ${ext}`;
+    return !x || x.expired;
+  }
+  return false;
 }
 
 /** E-Mail-Versand über ein SMTP-Konto (z.B. web.de), falls in der Konfiguration hinterlegt */

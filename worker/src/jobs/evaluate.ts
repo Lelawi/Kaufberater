@@ -4,7 +4,7 @@ import { db } from '../db.ts';
 import { fmtEur, round2 } from '../util/money.ts';
 import { sameShop, normShop, exactShop } from '../util/shop.ts';
 import { isGeneralPromo, namesOtherCategory, promoValue } from './vouchers.ts';
-import { hotWindow } from '../util/events.ts';
+import { hotWindow, offerMaxAge } from '../util/events.ts';
 import { cheapestBasket, basketText, type Basket } from '../util/pack.ts';
 import { createAlert, enoughBetter, similarRecentAlert } from './alerts.ts';
 import type { ProductRow } from '../products.ts';
@@ -248,7 +248,7 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
           (fakeNote && !isRefurb ? ` ${fakeNote}` : ''),
         // Monat im Schlüssel: derselbe Preis später wieder (Black Week → Weihnachten) wird erneut gemeldet
         url: cand.o.url, dedupKey: `thr:${p.id}:${isRefurb ? 'r' : 'n'}:${level}:${priceKey}:${monthKey()}`,
-        data: { price: cand.raw, shop: cand.o.shop },
+        data: { price: cand.raw, shop: cand.o.shop, offer: cand.o.id, total: Number(cand.o.total) },
       });
     }
 
@@ -330,11 +330,6 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     });
   }
   return stats;
-}
-
-/** Wie lange ein zuletzt gesehenes Angebot für Bestpreis und Meldungen zählt */
-export function offerMaxAge(now = new Date()): string {
-  return hotWindow(now) ? '2 hours' : '24 hours';
 }
 
 type Cand = { o: Offer; eff: number; sum: number; notes: string; basket?: Basket; raw: number; rawSum: number };
