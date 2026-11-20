@@ -54,7 +54,7 @@ export function priceChart(series, p, analysisHistory = [], opts = {}) {
   if (opts.from) dates.push(new Date(opts.from));
   if (!all.length || (dates.length < 2 && !opts.from)) return '<p class="muted">Noch zu wenig Daten für einen Verlauf. Nach ein paar Tagen Beobachtung erscheint hier die Kurve.</p>';
   // Breite an den Bildschirm anpassen, damit Beschriftungen auf dem Handy lesbar bleiben
-  const W = Math.max(300, Math.min(700, (document.getElementById('view')?.clientWidth ?? 640) - 64)); const H = Math.round(Math.max(190, Math.min(260, W * 0.55))); const L = 50; const R = 8; const T = 14; const B = 26;
+  const W = Math.max(300, Math.min(700, (document.getElementById('view')?.clientWidth ?? 640) - 64)); const H = Math.round(Math.max(190, Math.min(260, W * 0.55))); const L = 50; const R = 36; const T = 18; const B = 26;
   const minD = opts.from ? Number(new Date(opts.from)) : Math.min(...dates.map(Number)); const maxD = Math.max(...dates.map(Number), Date.now());
   let lo = Math.min(...all); let hi = Math.max(...all);
   const span = hi - lo || hi * 0.1; lo -= span * 0.08; hi += span * 0.08;
@@ -81,7 +81,7 @@ export function priceChart(series, p, analysisHistory = [], opts = {}) {
   // Aktueller Preis immer sichtbar: Punkt am letzten Tag mit Betrag (auch wenn die Linie erst wenige Tage lang ist)
   const last = [...pts].reverse().find((x) => x.n !== null);
   const lastMark = last ? `<circle cx="${X(last.d)}" cy="${Y(last.n)}" r="4.5" fill="var(--s-new)" stroke="var(--surface)" stroke-width="2"/>
-    <text x="${X(last.d) - 8}" y="${Y(last.n) - 9}" text-anchor="end" style="font:700 12px var(--font-num);fill:var(--s-new);paint-order:stroke;stroke:var(--surface);stroke-width:3px">${esc(last.n < 100 ? fmtEur(last.n) : fmtEur0(last.n))}</text>` : '';
+    <text x="${X(last.d)}" y="${Y(last.n) - 11 < 12 ? Y(last.n) + 20 : Y(last.n) - 11}" text-anchor="middle" style="font:700 12px var(--font-num);fill:var(--s-new);paint-order:stroke;stroke:var(--surface);stroke-width:3px">${esc(fmtEur(last.n))}</text>` : '';
   const deals = pts.filter((x) => x.deal).map((x) => `<circle cx="${X(x.d)}" cy="${Y(x.deal)}" r="4.5" fill="var(--s-deal)" stroke="var(--surface)" stroke-width="2"><title>${esc(`Deal ${fmtDate(x.d)}: ${fmtEur(x.deal)}`)}</title></circle>`).join('');
   const histDots = hist.map((h) => `<rect x="${X(h.d) - 4}" y="${Y(h.v) - 4}" width="8" height="8" rx="1.5" fill="none" stroke="var(--ink-3)" stroke-width="1.8"><title>${esc(`${fmtDate(h.d)}: ${fmtEur(h.v)} ${h.note}`)}</title></rect>`).join('');
   const hasRefurb = pts.some((x) => x.r !== null);
