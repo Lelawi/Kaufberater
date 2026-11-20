@@ -388,6 +388,10 @@ async function viewProduct(id) {
   ${!isBought && best ? html`<div class="quick"><a class="btn" href="${safeUrl(best.url)}" target="_blank" rel="noopener">Zum Angebot</a><button class="btn ghost" id="boughtTop" type="button">Gekauft</button></div>` : ''}
   <div class="seg tabs" role="radiogroup" aria-label="Ansicht">${PRODUCT_TABS.map(([k, label]) => html`<label><input type="radio" name="ptab" value="${k}" ${k === productTab() ? 'checked' : ''}><span>${k === 'offers' ? `${label} ${newOffers.length}` : label}</span></label>`)}</div>
   <div class="tab" data-tab="overview">
+  ${isBought ? protectionPanel(p, best, multi ? bk : null) : ''}
+  ${newOffers.length ? html`<section class="panel"><h2>${isBought ? 'Aktuelle Angebote' : 'Günstigste Shops'} <span class="muted" style="font-weight:400">${newOffers.length}</span></h2>
+    ${offerTable(newOffers.slice(0, 4), false, multi)}
+    ${newOffers.length > 4 || refurb.length ? html`<button class="btn small ghost" id="allOffers" type="button">Alle ${newOffers.length} Angebote${p.include_refurb && refurb.length ? ` + ${refurb.length} B-Ware` : ''} vergleichen</button>` : ''}</section>` : ''}
 
   ${a ? html`<section class="panel">
       <h2>Einschätzung</h2>
@@ -474,6 +478,11 @@ async function viewProduct(id) {
   // Reiter (17.11.: weniger Scrollen) – gemerkt pro Gerät
   const showTab = (k) => view.querySelectorAll('.tab').forEach((t) => { t.hidden = t.dataset.tab !== k; });
   showTab(productTab());
+  // 20.11.: „sehe nur noch den günstigsten Shop“ – Kurzliste im Überblick, Knopf springt zu allen Angeboten
+  document.getElementById('allOffers')?.addEventListener('click', () => {
+    const r = view.querySelector('input[name=ptab][value=offers]');
+    r.checked = true; r.dispatchEvent(new Event('change')); r.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
   view.querySelectorAll('input[name=ptab]').forEach((r) => r.addEventListener('change', () => {
     try { localStorage.setItem('kb-ptab', r.value); } catch { /* */ }
     showTab(r.value);
@@ -1111,6 +1120,24 @@ function b64ToBytes(s) {
 }
 
 /** Zeitraum des Preisverlaufs (wird gemerkt) */
+/** Gekauft: Preisschutz bis Ende der Rückgabefrist – Kaufpreis gegen den aktuell günstigsten Preis */
+function protectionPanel(p, best, basket) {
+  const days = p.return_until ? Math.ceil((new Date(p.return_until).getTime() - Date.now()) / 86400e3) : null;
+  const active = days == null || days >= 0;
+  const cur = basket ? Number(basket.effective ?? basket.total) : best ? Number(best.effective_total ?? best.total) : null;
+  const diff = cur != null && p.bought_price ? Number(p.bought_price) - cur : null;
+  return html`<section class="panel"><h2>Preisschutz <span class="pill ${active ? 'good' : ''}" style="margin-left:6px">${active ? 'aktiv' : 'beendet'}</span></h2>
+    <dl class="kv">
+      <dt>Gekauft</dt><dd>${fmtEur(p.bought_price)}${p.bought_shop ? ` bei ${p.bought_shop}` : ''} · ${fmtDate(p.bought_at)}</dd>
+      <dt>Rückgabe bis</dt><dd>${p.return_until ? html`${fmtDate(p.return_until)} ${active ? html`<span class="muted">(noch ${days} Tag${days === 1 ? '' : 'e'})</span>` : html`<span class="muted">(abgelaufen)</span>`}` : 'nicht angegeben – wird weiter beobachtet'}</dd>
+      ${cur != null ? html`<dt>Jetzt günstigster</dt><dd><span class="num">${fmtEur(cur)}</span>${best ? html` bei <a href="${safeUrl(best.url)}" target="_blank" rel="noopener">${best.shop}</a>` : ''}</dd>` : ''}
+    </dl>
+    ${diff != null ? diff >= 1
+      ? html`<div class="verdict buy_now"><strong>${fmtEur(diff)} günstiger als bezahlt</strong>${active ? 'Preisanpassung beim Shop anfragen oder zurückgeben und neu kaufen.' : 'Rückgabefrist ist aber vorbei.'}</div>`
+      : html`<p class="hint">Kein günstigeres Angebot als dein Kaufpreis.${active ? ' Du bekommst eine Meldung, falls es deutlich günstiger wird.' : ''}</p>` : ''}
+  </section>`;
+}
+
 const PRODUCT_TABS = [['overview', 'Überblick'], ['offers', 'Angebote'], ['analysis', 'Analyse'], ['sources', 'Quellen']];
 function productTab() { try { const t = localStorage.getItem('kb-ptab'); return PRODUCT_TABS.some(([k]) => k === t) ? t : 'overview'; } catch { return 'overview'; } }
 const RANGES = [['3m', '3 M', 92], ['6m', '6 M', 183], ['12m', '12 M', 366], ['3j', '3 J', 1096], ['all', 'Alles', null]];
