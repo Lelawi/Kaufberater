@@ -208,6 +208,7 @@ async function saveOffers(l: DueListing, offersIn: OfferData[]) {
       in_stock = excluded.in_stock, delivery_text = excluded.delivery_text, seller = excluded.seller,
       shop_rating = coalesce(excluded.shop_rating, kb_offers.shop_rating), shop_reviews = coalesce(excluded.shop_reviews, kb_offers.shop_reviews),
       pack_size = excluded.pack_size,
+      disputed_out = kb_offers.disputed_out or (kb_offers.disputed_reason = 'stock' and excluded.in_stock = false),
       last_seen_at = now(), gone = false
     returning id, offer_key`;
   const idByKey = new Map(saved.map((r) => [r.offer_key as string, r.id as string]));

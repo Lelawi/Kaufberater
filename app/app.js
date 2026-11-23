@@ -352,7 +352,7 @@ async function viewProduct(id) {
   // Grund: stock = 7 Tage, shipping/wrong = dauerhaft, price/leer = bis −10 % (wie worker evaluate.ts)
   const disputed = allOffers.filter((o) => {
     if (o.disputed_total == null) return false;
-    if (o.disputed_reason === 'stock') return Date.now() - new Date(o.disputed_at).getTime() < 7 * 86400e3;
+    if (o.disputed_reason === 'stock') return Date.now() - new Date(o.disputed_at).getTime() < 30 * 86400e3;
     if (o.disputed_reason === 'shipping' || o.disputed_reason === 'wrong') return true;
     return Number(o.total) >= Number(o.disputed_total) * 0.9;
   });
@@ -507,7 +507,7 @@ async function viewProduct(id) {
     toast('Danke – wird ignoriert, Bestpreis wird neu berechnet'); route();
   }));
   document.getElementById('undispute')?.addEventListener('click', async () => {
-    await sb.from('kb_offers').update({ disputed_total: null, disputed_at: null, disputed_reason: null }).in('id', disputed.map((o) => o.id));
+    await sb.from('kb_offers').update({ disputed_total: null, disputed_at: null, disputed_reason: null, disputed_out: false }).in('id', disputed.map((o) => o.id));
     await sb.rpc('kb_request_check', { p_product: id }); route();
   });
   document.getElementById('identOk')?.addEventListener('click', async (e) => {

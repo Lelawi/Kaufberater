@@ -14,6 +14,7 @@ import { runVouchers } from './jobs/vouchers.ts';
 import { stats as httpStats } from './util/http.ts';
 import { preBlackWeekAnalysis, hotWindow } from './util/events.ts';
 import { packBackfill } from './jobs/packbackfill.ts';
+import { liftRestocked, announceRestocked, type Lifted } from './jobs/restock.ts';
 
 /** arg: "all" (Standard), "checks", "deals", "discovery", "quick", "product:<uuid>" */
 export async function runAll(arg = '') {
@@ -42,7 +43,10 @@ export async function runAll(arg = '') {
     if (mode === 'quick') { await step('quickchecks', () => runQuickChecks(deadline)); await step('alerts', () => deliverAlerts()); return; }
     await step('quickchecks', () => runQuickChecks(deadline));
     if (mode === 'all') await step('vouchers', () => runVouchers());
+    let lifted: Lifted[] = [];
+    await step('restock', async () => { lifted = await liftRestocked(productId); return lifted.length; });
     await step('evaluate', () => runEvaluate({ productId }));
+    await step('restockAlerts', () => announceRestocked(lifted));
     // Neue Produkte bekommen sofort vorläufige Schwellen; danach noch einmal bewerten, damit Treffer gleich gemeldet werden
     await step('trends', () => runTrends({ productId }));
     await step('autothresholds', async () => { const r = await runAutoThresholds({ productId }); if (r.set) await runEvaluate({ productId }); return r; });
