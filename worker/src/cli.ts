@@ -78,6 +78,7 @@ async function main() {
       case 'run': { const { runAll } = await import('./run.ts'); await runAll(arg); break; }
       case 'adapter': { const { testAdapter } = await import('./devtools.ts'); await testAdapter(arg); break; }
       case 'deals': { const { testDeals } = await import('./devtools.ts'); await testDeals(arg); break; }
+      case 'c24probe': { const { probeCheck24 } = await import('./devtools.ts'); await probeCheck24(arg); break; }
       case 'apnsprobe': {
         // Verbindung zu Apples Push-Dienst testen – mit Fantasie-Schlüssel muss Apple sauber ablehnen (403 InvalidProviderToken)
         const { useApnsConfig, sendApns, closeApns } = await import('./util/apns.ts');
