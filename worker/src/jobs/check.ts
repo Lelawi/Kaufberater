@@ -10,6 +10,7 @@ import { hotWindow } from '../util/events.ts';
 import { pageHistory, pageImage } from '../util/history.ts';
 import { offerPackSize, packSize } from '../util/pack.ts';
 import { hasExcludedWord } from '../util/match.ts';
+import { homePages } from '../util/http.ts';
 
 interface DueListing {
   id: string; product_id: string; user_id: string; source: string; country: string; external_id: string; url: string;
@@ -35,12 +36,21 @@ export async function runChecks(deadline: number, opts: { productId?: string; li
     limit ${opts.limit ?? 500}`;
 
   // Pro Quelle nacheinander (höflich), verschiedene Quellen parallel
+  // Gesperrte Shops: Wand-iPad holt die Seite zu Hause ab (kb_home_pages); hier markieren und frische Seiten übernehmen
+  if (!IS_HOME) {
+    const shopRows = await sql`select id, url, needs_home from kb_listings where source = 'shop' and active and not rejected`;
+    const mark = shopRows.filter((r) => needsHomeUrl(r.url) !== r.needs_home);
+    for (const r of mark) await sql`update kb_listings set needs_home = ${!r.needs_home} where id = ${r.id}`;
+    const pages = await sql`select h.url, h.status, h.final_url, h.body from kb_home_pages h join kb_listings l on l.id = h.listing_id
+                            where h.fetched_at > now() - interval '3 hours' and h.fetched_at > coalesce(l.last_checked_at, 'epoch') and h.body is not null and coalesce(h.status, 200) = 200`;
+    for (const p of pages) homePages.set(p.url, { status: p.status ?? 200, url: p.final_url ?? p.url, text: p.body, headers: new Headers() });
+  }
   const bySource = new Map<string, DueListing[]>();
   for (const l of due) {
     if (blocked.has(l.source)) continue;
     const ad = sourceByKey(l.source);
     if (!ad || !availableHere(ad)) continue;
-    if (l.source === 'shop' && !IS_HOME && needsHomeUrl(l.url)) continue;
+    if (l.source === 'shop' && !IS_HOME && needsHomeUrl(l.url) && !homePages.has(l.url)) continue;
     const arr = bySource.get(l.source) ?? [];
     arr.push(l);
     bySource.set(l.source, arr);

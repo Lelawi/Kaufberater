@@ -103,7 +103,12 @@ export function looksBlocked(status: number, text: string): boolean {
   return false;
 }
 
+/** Vom Wand-iPad zu Hause abgeholte Seiten (Shops, die Rechenzentren sperren) – werden statt eines Abrufs verwendet */
+export const homePages = new Map<string, Page>();
+
 export async function fetchPage(url: string, opts: FetchOpts = {}): Promise<Page> {
+  const home = homePages.get(url);
+  if (home) return home;
   const retries = opts.retries ?? 2;
   let lastErr: Error | null = null;
   for (let attempt = 0; attempt <= retries; attempt++) {

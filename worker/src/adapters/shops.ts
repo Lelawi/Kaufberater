@@ -35,7 +35,9 @@ export const SHOP_RULES: Record<string, ShopRule> = {
   'cyberport.de': { name: 'Cyberport', country: 'DE', needsHome: true },
   'notebooksbilliger.de': { name: 'notebooksbilliger', country: 'DE', needsHome: true },
   'kaufland.de': { name: 'Kaufland', country: 'DE', needsHome: true },
+  // Euronics-Plattform: jeder Händler vor Ort hat eigene Preise unter /<ort-händler>/… (Name wird daraus ergänzt)
   'euronics.de': { name: 'Euronics', country: 'DE', needsHome: true },
+  'mediaathome.de': { name: 'Media@home', country: 'DE', needsHome: true },
   'conrad.de': { name: 'Conrad', country: 'DE', needsHome: true },
   'proshop.de': { name: 'Proshop', country: 'DE', needsHome: true },
   'computeruniverse.net': { name: 'computeruniverse', country: 'DE', needsHome: true },
@@ -59,6 +61,16 @@ export function needsHomeUrl(url: string): boolean {
   return !!ruleFor(url)?.needsHome || /amazon\.|geizhals\.|^amzn\.|^a\.co$/.test(hostOf(url));
 }
 
+/** Euronics/Media@home: „/duesseldorf-granderath/…“ → „Euronics Granderath (Duesseldorf)“ */
+export function storeName(url: string, base: string | undefined): string | null {
+  if (!base || !/(^|\.)(euronics|mediaathome)\.de$/.test(hostOf(url))) return null;
+  const seg = new URL(url).pathname.split('/').filter(Boolean);
+  const m = seg.length >= 3 ? /^([a-z]+)-([a-z-]+)$/.exec(seg[0]) : null;
+  if (!m) return null;
+  const cap = (s: string) => s.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  return `${base} ${cap(m[2])} (${cap(m[1]).replace(/^Duesseldorf$/, 'Düsseldorf').replace(/^Koeln$/, 'Köln').replace(/^Muenchen$/, 'München')})`;
+}
+
 export function parseShopPage(html: string, url: string): OfferData | null {
   const rule = ruleFor(url);
   const info = extractProduct(html);
@@ -72,7 +84,7 @@ export function parseShopPage(html: string, url: string): OfferData | null {
   const host = hostOf(url);
   return {
     offerKey: 'page',
-    shop: rule?.name ?? host,
+    shop: storeName(url, rule?.name) ?? rule?.name ?? host,
     country: rule?.country ?? (host.match(/\.(fr|it|es|nl|at|be|pl)$/)?.[1]?.toUpperCase() ?? 'DE'),
     condition: info?.condition && info.condition !== 'new' ? info.condition : conditionFromTitle(title),
     title, url,
