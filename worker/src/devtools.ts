@@ -27,6 +27,7 @@ export async function probeCheck24(arg: string) {
   const [l] = await sql`select url from kb_listings where id = ${arg} and source = 'check24'`;
   if (!l) { console.log('::warning::kein CHECK24-Eintrag'); return; }
   const p = await fetchPage(l.url, { minDelayMs: 3500 });
+  await debugLog('c24probe-page', { url: l.url, status: p.status, body: p.text });
   const parts: string[] = [];
   const re = /self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)/g;
   let m: RegExpExecArray | null;
