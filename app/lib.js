@@ -6,8 +6,10 @@ export const SUPABASE_URL = 'https://obxwqvmmirmbfktjvhxf.supabase.co';
 // Öffentlicher Schlüssel (darf im Code stehen; Zugriff regelt die Datenbank pro Benutzer)
 export const SUPABASE_KEY = 'sb_publishable_z8qJ_vabWK3oWcczXR2YpQ_XVu7kO5s';
 
+// Ohne Browser-Sperre (navigator.locks): 23.11. lagen zwischen Abfragen eines Seitenaufbaus 15–20 Sek. Wartezeit, weil
+// jede Abfrage auf die Sitzungs-Sperre wartete (zweiter Tab / Home-Bildschirm-App im Hintergrund hielt sie fest)
 export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, storageKey: 'kaufberater-auth' },
+  auth: { persistSession: true, autoRefreshToken: true, storageKey: 'kaufberater-auth', lock: async (_name, _timeout, fn) => await fn() },
 });
 
 /** HTML-Vorlage mit automatischem Escaping aller eingesetzten Werte (Schutz vor eingeschleustem Code) */
