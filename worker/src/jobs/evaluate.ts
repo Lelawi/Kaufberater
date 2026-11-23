@@ -3,7 +3,7 @@
 import { db } from '../db.ts';
 import { fmtEur, round2 } from '../util/money.ts';
 import { sameShop, normShop, exactShop } from '../util/shop.ts';
-import { isGeneralPromo, namesOtherCategory, promoValue } from './vouchers.ts';
+import { isGeneralPromo, namesOtherCategory, promoValue, voucherHints, type ShopVoucherRow } from './vouchers.ts';
 import { hotWindow, offerMaxAge } from '../util/events.ts';
 import { excludeSqlPatterns } from '../util/match.ts';
 import { effectiveThresholds } from './sanity.ts';
@@ -53,6 +53,11 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     .filter((v) => v.value_type === 'percent' ? Number(v.value) <= 25 : Number(v.value) <= 50)
     .map((v): Voucher => ({ id: `promo:${v.shop}:${v.title}`, kind: 'voucher', shop: v.shop, label: `Aktion „${v.title.slice(0, 60)}“`,
       code: null, value: Number(v.value), value_type: v.value_type, min_order: v.min_order != null ? Number(v.min_order) : null, valid_until: null }));
+  // Alle gültigen Shop-Gutscheine (auch mit Code/Einschränkung) – für die Hinweise je Angebot
+  const hintVouchers = await sql<ShopVoucherRow[]>`
+    select shop, title, code, value, value_type, min_order, valid_until::text, verified, audience, kind, conditions, terms, url from kb_shop_vouchers
+    where not expired and last_seen_at > now() - ${seenWithin}::interval
+      and (valid_until is null or valid_until >= (now() at time zone 'Europe/Berlin')::date) and (valid_from is null or valid_from <= now())`;
   const bundleCandidates = new Map<string, { voucher: Voucher; items: { product: string; name: string; offer: Offer }[] }>();
 
   for (const p of products) {
@@ -120,10 +125,14 @@ export async function runEvaluate(opts: { productId?: string } = {}) {
     const enriched = offers.map((o) => ({ o, ...effective(o, vouchers, rates, p.name) }));
     if (enriched.length) {
       // alle Endpreise in einer Abfrage aktualisieren
-      const upd = enriched.map((e) => ({ id: e.o.id, eff: e.eff, notes: e.notes || null }));
-      await sql`update kb_offers o set effective_total = v.eff, effective_notes = v.notes
-                from jsonb_to_recordset(${sql.json(upd as any)}) as v(id uuid, eff numeric, notes text)
-                where o.id = v.id and (o.effective_total is distinct from v.eff or o.effective_notes is distinct from v.notes)`;
+      const upd = enriched.map((e) => {
+        const h = voucherHints({ shop: e.o.shop, price: Number(e.o.price) }, hintVouchers, p, e.notes, exactShop);
+        return { id: e.o.id, eff: e.eff, notes: e.notes || null, hints: h.length ? h : null };
+      });
+      await sql`update kb_offers o set effective_total = v.eff, effective_notes = v.notes, voucher_hints = v.hints
+                from jsonb_to_recordset(${sql.json(upd as any)}) as v(id uuid, eff numeric, notes text, hints jsonb)
+                where o.id = v.id and (o.effective_total is distinct from v.eff or o.effective_notes is distinct from v.notes
+                                       or o.voucher_hints is distinct from v.hints)`;
     }
 
     // 2) Bestpreise

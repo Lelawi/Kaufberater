@@ -118,6 +118,67 @@ export function parseVoucherPage(html: string): ShopVoucher[] {
   return out;
 }
 
+export interface MdVoucher extends ShopVoucher {
+  id: string; codeText: string | null; validFrom: string | null; validUntil: string | null; verified: boolean;
+  terms: string | null; audience: 'alle' | 'neukunden' | 'mitglieder' | null; kind: 'code' | 'aktion';
+}
+
+/** Echter Code (nicht „siehe Details“, „Coupon auf der Seite aktivieren“) */
+export function realCode(c: unknown): string | null {
+  const s = typeof c === 'string' ? c.trim() : '';
+  return /^[A-Za-z0-9][A-Za-z0-9_-]{2,29}$/.test(s) && /\d|^[A-Z0-9_-]+$/.test(s) ? s : null;
+}
+
+/** Für wen: „Gilt nur für Neukunden“, „nur OTTO Up Mitglieder“, Newsletter/App → eingeschränkt; „Gilt für alle Kunden“ */
+export function audienceOf(text: string): MdVoucher['audience'] {
+  if (/neukunde|erstbestellung|erste bestellung|willkommen/i.test(text) && !/alle kunden|neu- und bestandskunden|bestandskunden und neukunden/i.test(text)) return 'neukunden';
+  if (/nur (?:für )?[\w@ ]{0,20}mitglied|newsletter|\bapp\b|club|registrier|kundenkonto erforderlich|student/i.test(text)) return 'mitglieder';
+  if (/alle kunden/i.test(text)) return 'alle';
+  return null;
+}
+
+/** mydealz-Gutscheinseite: strukturierte Daten (Next.js) mit Code, Laufzeit, Prüfstatus und Bedingungen */
+export function parseMydealzJson(html: string): MdVoucher[] | null {
+  const parts: string[] = [];
+  const re = /self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) { try { parts.push(JSON.parse(`"${m[1]}"`)); } catch { /* */ } }
+  const f = parts.join('');
+  const seen = new Map<string, MdVoucher>();
+  for (let i = f.indexOf('"voucher":{'); i >= 0; i = f.indexOf('"voucher":{', i + 10)) {
+    const start = i + 10;
+    let depth = 0, inStr = false, esc = false, end = -1;
+    for (let k = start; k < f.length && k < start + 60_000; k++) {
+      const c = f[k];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true; else if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) { end = k; break; } }
+    }
+    if (end < 0) continue;
+    let v: any;
+    try { v = JSON.parse(f.slice(start, end + 1)); } catch { continue; }
+    if (!v?.idPool || !v.title || seen.has(v.idPool) || v.published === false) continue;
+    if (v.endTime && new Date(v.endTime).getTime() < Date.now()) continue;
+    const title = String(v.title).replace(/\s+/g, ' ').trim();
+    const terms = typeof v.termsAndConditions === 'string' ? v.termsAndConditions.replace(/\s+/g, ' ').trim().slice(0, 800) : null;
+    const hist = v.voucherVerificationLiveHistory;
+    const code = v.voucherType === 0 ? realCode(v.code) : null;
+    const pv = promoValue(title);
+    const cb = title.match(/(\d+(?:,\d+)?)\s*%\s*Cashback auf Deine Einkäufe/i);
+    seen.set(v.idPool, {
+      id: String(v.idPool), title, code: v.voucherType === 0, codeText: code,
+      value: pv?.value ?? null, valueType: pv?.valueType ?? null,
+      cashbackPercent: cb ? Number(cb[1].replace(',', '.')) : null,
+      minOrder: minOrderOf(title) ?? (terms ? minOrderOf(terms) : null),
+      general: isGeneralPromo(title) && !/nur für|ausgesucht|ausgewählt/i.test(terms ?? ''),
+      validFrom: v.startTime ?? null, validUntil: v.endTime ?? null,
+      verified: hist?.status === 'verified' && (!hist.expiredAt || new Date(hist.expiredAt).getTime() > Date.now()),
+      terms, audience: audienceOf(`${title} ${terms ?? ''}`), kind: v.voucherType === 0 ? 'code' : 'aktion',
+    });
+  }
+  return seen.size ? [...seen.values()] : null;
+}
+
 export async function runVouchers(force = false) {
   const sql = await db();
   // alle 8 Std., in der heißen Phase alle 2,5 Std. – Aktionstage (Singles Day, Black Friday) gelten oft nur einen Tag
@@ -138,7 +199,26 @@ export async function runVouchers(force = false) {
       try {
         const p = await fetchPage(`https://www.mydealz.de/gutscheine/${slug}`, { minDelayMs: 4000, retries: 0 });
         pages++;
-        const vs = parseVoucherPage(p.text);
+        const md = parseMydealzJson(p.text);
+        for (const v of md ?? []) {
+          await sql`insert into kb_shop_vouchers (shop, source, external_id, title, code, value, value_type, min_order, conditions, url, last_seen_at, expired,
+                                                  valid_from, valid_until, verified, terms, audience, kind)
+                    values (${n}, 'mydealz', ${'md:' + v.id}, ${v.title.slice(0, 300)}, ${v.codeText}, ${v.value}, ${v.valueType}, ${v.minOrder},
+                            ${v.general ? 'allgemein' : null}, ${p.url}, now(), false,
+                            ${v.validFrom}, ${v.validUntil ? new Date(v.validUntil).toLocaleDateString('sv-SE', { timeZone: 'Europe/Berlin' }) : null}, ${v.verified}, ${v.terms}, ${v.audience}, ${v.kind})
+                    on conflict (source, external_id) do update set last_seen_at = now(), expired = false, shop = excluded.shop, title = excluded.title,
+                      code = excluded.code, min_order = excluded.min_order, conditions = excluded.conditions, value = excluded.value, value_type = excluded.value_type,
+                      valid_from = excluded.valid_from, valid_until = excluded.valid_until, verified = excluded.verified, terms = excluded.terms,
+                      audience = excluded.audience, kind = excluded.kind`;
+          if (v.cashbackPercent) {
+            await sql`insert into kb_cashback_rates (portal, shop, rate_text, rate_percent, url, updated_at)
+                      values ('mydealz Cashback', ${n}, ${v.cashbackPercent.toLocaleString('de-DE') + ' %'}, ${v.cashbackPercent}, ${p.url}, now())
+                      on conflict (portal, shop) do update set rate_text = excluded.rate_text, rate_percent = excluded.rate_percent, updated_at = now()`;
+          }
+          found++;
+        }
+        // Rückfall: alte HTML-Auswertung, falls die strukturierten Daten fehlen
+        const vs = md ? [] : parseVoucherPage(p.text);
         for (const v of vs) {
           const id = createHash('md5').update(v.title).digest('hex');
           await sql`insert into kb_shop_vouchers (shop, source, external_id, title, code, value, value_type, min_order, conditions, url, last_seen_at, expired)
@@ -183,4 +263,40 @@ export async function runVouchers(force = false) {
     } catch { /* Suche ist nur Zusatz */ }
   }
   return { shops: shops.length, pages, found };
+}
+
+export interface ShopVoucherRow {
+  shop: string; title: string; code: string | null; value: number | null; value_type: string | null; min_order: number | null;
+  valid_until: string | null; verified: boolean | null; audience: string | null; kind: string | null; conditions: string | null;
+  terms: string | null; url: string | null;
+}
+export interface VoucherHint { t: string; c: string | null; v: number | null; vt: string | null; mo: number | null; u: string | null; a: string | null; ok: boolean; in: boolean; url: string | null }
+
+/**
+ * Passende Gutscheine je Angebot (23.11.: „sehen, dass ich nur WILLKOMMEN10 eingeben muss“). Vorsichtig: nur, was
+ * erkennbar für den ganzen Einkauf gilt (allgemeine Aktion, Newsletter-/Neukunden-Code, „auf alles“) oder das Produkt
+ * (Marke/Modell) ausdrücklich nennt. Nicht: andere Sortimente, „bis zu“-Sales, Cashback, Geschenkkarten, Produkte anderer Marken.
+ */
+export function voucherHints(o: { shop: string; price: number }, list: ShopVoucherRow[], product: { name: string; brand?: string | null; model?: string | null },
+                             appliedNotes: string, same: (a: string, b: string) => boolean): VoucherHint[] {
+  const words = [product.brand, product.model, ...product.name.split(/\s+/)].filter((w): w is string => !!w && w.length >= 3 && /[a-z]/i.test(w))
+    .map((w) => w.toLowerCase());
+  const out: VoucherHint[] = [];
+  for (const v of list) {
+    if (!same(v.shop, o.shop) || v.value == null) continue;
+    const text = `${v.title} ${v.terms ?? ''}`;
+    if (namesOtherCategory(text, product.name)) continue;
+    if (v.min_order && o.price < Number(v.min_order)) continue;
+    if (/cashback|geschenkkarte|gutscheinkarte|versand|payback|punkte/i.test(v.title)) continue;
+    const general = v.conditions === 'allgemein';
+    const store = /newsletter|neukunde|willkommen|erstbestellung|auf (?:alles|fast alles|das (?:gesamte |komplette )?sortiment|(?:deine|die|den) (?:gesamte[n]? )?(?:bestellung|einkauf|warenkorb))/i.test(v.title)
+      && !/ausgewählt|ausgesucht|bis zu|viele/i.test(v.title);
+    const lower = v.title.toLowerCase();
+    const forProduct = words.some((w) => new RegExp(`(^|[^a-z0-9])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^a-z0-9]|$)`).test(lower));
+    if (!general && !store && !(forProduct && v.kind === 'code')) continue;
+    out.push({ t: v.title.slice(0, 160), c: v.code, v: Number(v.value), vt: v.value_type, mo: v.min_order != null ? Number(v.min_order) : null,
+      u: v.valid_until, a: v.audience, ok: !!v.verified, in: general && appliedNotes.includes(v.title.slice(0, 60)), url: v.url });
+  }
+  const amount = (h: VoucherHint) => h.vt === 'percent' ? o.price * (h.v ?? 0) / 100 : (h.v ?? 0);
+  return out.sort((a, b) => Number(b.in) - Number(a.in) || amount(b) - amount(a)).slice(0, 3);
 }
