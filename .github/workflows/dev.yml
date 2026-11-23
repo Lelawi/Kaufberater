@@ -14,7 +14,7 @@ permissions:
   contents: write
 jobs:
   run:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # Playwright läuft (noch) nicht auf 26.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
